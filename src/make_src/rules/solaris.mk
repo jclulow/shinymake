@@ -42,7 +42,7 @@ SWHOME =
 # Programs
 #
 #CC =		cc
-INSTALL =	/usr/ucb/install
+INSTALL =	/opt/local/bin/install
 RPCGEN =	/usr/5bin/rpcgen
 
 #
