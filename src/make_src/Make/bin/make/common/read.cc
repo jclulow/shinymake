@@ -52,6 +52,14 @@
 extern "C" Avo_err *avo_find_run_dir(char **dirp);
 #endif
 
+#ifdef PREFIX
+#define MTOSTR(x)	#x
+#define XMTOSTR(x)	MTOSTR(x)
+#define	MAKE_PREFIX	XMTOSTR(PREFIX)
+#else
+#error	"PREFIX environment variable should be defined"
+#endif
+
 /*
  * typedefs & structs
  */
@@ -127,6 +135,10 @@ read_simple_file(register Name makefile_name, register Boolean chase_path, regis
 	char                    *run_dir, makerules_dir[BUFSIZ];
 #endif
 
+#if defined(SUN5_0)
+	char			*prefix_dir;
+#endif
+
 	wchar_t * wcb = get_wstring(makefile_name->string_mb);
 
 #ifdef NSE
@@ -156,6 +168,14 @@ read_simple_file(register Name makefile_name, register Boolean chase_path, regis
 						&makefile_path,
 						-1);
 #ifdef SUN5_0
+
+				(void) asprintf(&prefix_dir,
+				    NOCATGETS("%s/share/lib/make"),
+				    MAKE_PREFIX);
+				add_dir_to_path(prefix_dir,
+						&makefile_path,
+						-1);
+				free(prefix_dir);
 				add_dir_to_path(NOCATGETS("/usr/share/lib/make"),
 						&makefile_path,
 						-1);

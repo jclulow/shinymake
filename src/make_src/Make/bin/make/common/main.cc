@@ -117,8 +117,20 @@ extern void job_adjust_fini();
 /*
  * Defined macros
  */
-#define	LD_SUPPORT_ENV_VAR	NOCATGETS("SGS_SUPPORT")
+#define	LD_SUPPORT_ENV_VAR	NOCATGETS("SGS_SUPPORT_32")
+#define	LD_SUPPORT_ENV_VAR_32	NOCATGETS("SGS_SUPPORT_32")
+#define	LD_SUPPORT_ENV_VAR_64	NOCATGETS("SGS_SUPPORT_64")
 #define	LD_SUPPORT_MAKE_LIB	NOCATGETS("libmakestate.so.1")
+#define	LD_SUPPORT_MAKE_LIB_DIR	NOCATGETS("/lib")
+#define	LD_SUPPORT_MAKE_LIB_DIR_64	NOCATGETS("/64")
+
+#ifdef PREFIX
+#define MTOSTR(x)	#x
+#define XMTOSTR(x)	MTOSTR(x)
+#define	MAKE_PREFIX	XMTOSTR(PREFIX)
+#else
+#error	"PREFIX environment variable should be defined"
+#endif
 
 /*
  * typedefs & structs
@@ -2070,46 +2082,80 @@ int   done=0;
  *	  if it's not already in there.
  *	The SGS_SUPPORT env var and libmakestate.so.1 is used by
  *	  the linker ld to report .make.state info back to make.
+ *
+ * In the new world we always will set the 32-bit and 64-bit versions of this
+ * variable explicitly so that we can take into account the correct isa and our
+ * prefix. So say that the prefix was /opt/local. Then we would want to search
+ * /opt/local/lib/libmakestate.so.1:libmakestate.so.1. We still want to search
+ * the original location just as a safety measure.
  */
 static void
 set_sgs_support()
 {
 	int		len;
-	char		*newpath;
-	char		*oldpath;
-	static char	*prev_path;
+	char		*newpath, *newpath64;
+	char		*oldpath, *oldpath64;
+	static char	*prev_path, *prev_path64;
 
-	oldpath = getenv(LD_SUPPORT_ENV_VAR);
+	oldpath = getenv(LD_SUPPORT_ENV_VAR_32);
 	if (oldpath == NULL) {
-		len = strlen(LD_SUPPORT_ENV_VAR) + 1 +
-			strlen(LD_SUPPORT_MAKE_LIB) + 1;
+		len = snprintf(NULL, 0, "%s=%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_32,
+		    MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR,
+		    LD_SUPPORT_MAKE_LIB, LD_SUPPORT_MAKE_LIB) + 1;
 		newpath = (char *) malloc(len);
-		sprintf(newpath, "%s=", LD_SUPPORT_ENV_VAR);
+		sprintf(newpath, "%s=%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_32,
+		    MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR,
+		    LD_SUPPORT_MAKE_LIB, LD_SUPPORT_MAKE_LIB);
 	} else {
-		len = strlen(LD_SUPPORT_ENV_VAR) + 1 + strlen(oldpath) + 1 +
-			strlen(LD_SUPPORT_MAKE_LIB) + 1;
+		len = snprintf(NULL, 0, "%s=%s:%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_32, oldpath, MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR, LD_SUPPORT_MAKE_LIB,
+		    LD_SUPPORT_MAKE_LIB) + 1;
 		newpath = (char *) malloc(len);
-		sprintf(newpath, "%s=%s", LD_SUPPORT_ENV_VAR, oldpath);
+		sprintf(newpath, "%s=%s:%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_32, oldpath, MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR, LD_SUPPORT_MAKE_LIB,
+		    LD_SUPPORT_MAKE_LIB);
 	}
 
-#if defined(TEAMWARE_MAKE_CMN)
-
-	/* function maybe_append_str_to_env_var() is defined in avo_util library
-	 * Serial make should not use this library !!!
-	 */
-	maybe_append_str_to_env_var(newpath, LD_SUPPORT_MAKE_LIB);
-#else
-	if (oldpath == NULL) {
-		sprintf(newpath, "%s%s", newpath, LD_SUPPORT_MAKE_LIB);
+	oldpath64 = getenv(LD_SUPPORT_ENV_VAR_64);
+	if (oldpath64 == NULL) {
+		len = snprintf(NULL, 0, "%s=%s/%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_64, MAKE_PREFIX, LD_SUPPORT_MAKE_LIB_DIR,
+		    LD_SUPPORT_MAKE_LIB_DIR_64, LD_SUPPORT_MAKE_LIB,
+		    LD_SUPPORT_MAKE_LIB) + 1;
+		newpath64 = (char *) malloc(len);
+		sprintf(newpath64, "%s=%s/%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_64, MAKE_PREFIX, LD_SUPPORT_MAKE_LIB_DIR,
+		    LD_SUPPORT_MAKE_LIB_DIR_64, LD_SUPPORT_MAKE_LIB,
+		    LD_SUPPORT_MAKE_LIB);
 	} else {
-		sprintf(newpath, "%s:%s", newpath, LD_SUPPORT_MAKE_LIB);
+		len = snprintf(NULL, 0, "%s=%s:%s/%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_64, oldpath64, MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR, LD_SUPPORT_MAKE_LIB_DIR_64,
+		    LD_SUPPORT_MAKE_LIB, LD_SUPPORT_MAKE_LIB) + 1;
+		newpath64 = (char *) malloc(len);
+		sprintf(newpath64, "%s=%s:%s/%s/%s/%s:%s",
+		    LD_SUPPORT_ENV_VAR_64, oldpath64, MAKE_PREFIX,
+		    LD_SUPPORT_MAKE_LIB_DIR, LD_SUPPORT_MAKE_LIB_DIR_64,
+		    LD_SUPPORT_MAKE_LIB, LD_SUPPORT_MAKE_LIB);
 	}
-#endif
+
 	putenv(newpath);
 	if (prev_path) {
 		free(prev_path);
 	}
 	prev_path = newpath;
+
+	putenv(newpath64);
+	if (prev_path64) {
+		free(prev_path64);
+	}
+	prev_path64 = newpath64;
 }
 
 /*

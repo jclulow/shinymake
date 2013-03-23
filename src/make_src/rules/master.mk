@@ -57,7 +57,8 @@ YACC =		/usr/ccs/bin/yacc
 ##-----------------------------------------------------------------
 
 CPPFLAGS +=	-DINTER \
-		-I$(TOP)/include 
+		-I$(TOP)/include \
+		-DPREFIX=$(PREFIX)
 
 LINTFLAGS +=	-buxz
 

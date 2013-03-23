@@ -40,6 +40,7 @@
 #	CC		$CC -c x.c		preferred C compiler
 #	CCC		$CCC -c x.cc		preferred C++ compiler
 #	MAKE		$MAKE {target}		preferred "make" executable
+#	PREFIX		/usr			the target path in the fs
 #	DESTDIR		$DESTDIR/usr/ccs	root of installation tree
 
 # Legal arguments are "clean", "all", and "install".  The default
@@ -87,6 +88,11 @@ endif
 setenv CC64 $CC
 setenv CCC64 $CCC
 
+if ( ! $?PREFIX ) then
+    setenv PREFIX /usr
+endif
+
+
 if ( ! $?DESTDIR ) then
     setenv DESTDIR ../../destdir/root_`uname -p`
 endif
@@ -113,15 +119,16 @@ echo Using variables:
 echo
 echo '	'CC = $CC
 echo '	'CCC = $CCC
+echo '	'PREFIX = $PREFIX
 echo '	'DESTDIR = $DESTDIR
 echo '	'MAKE = $MAKE
 echo '	'STUDIOBIN = $STUDIOBIN
 echo
-$MAKE CC=${CC} CCC=${CCC} DESTDIR=${DESTDIR} MAKE=${MAKE} $args
+$MAKE CC=${CC} CCC=${CCC} DESTDIR=${DESTDIR} MAKE=${MAKE} PREFIX=${PREFIX} $args
 echo
 echo === build complete ===
 echo
-echo Binaries installed at $DESTDIR':'
-echo
-cd $DESTDIR
-find . -type f -print | sed 's/^/	/'
+echo Binaries installed at $DESTDIR'/'$PREFIX':'
+#echo
+#cd $DESTDIR/$PREFIX
+#find . -type f -print | sed 's/^/	/'

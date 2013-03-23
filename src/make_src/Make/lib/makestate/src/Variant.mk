@@ -68,6 +68,12 @@ $(DLIBNAME) : $(LIBNAME)
 all: $(DLIBNAME)
 
 install: all
-	${INSTALL} -d ${DESTDIR}/usr/lib$(VAR_DIR)
-	${RM} ${DESTDIR}/usr/lib$(VAR_DIR)/$(DLIBNAME)
-	${INSTALL} $(DLIBNAME) ${DESTDIR}/usr/lib$(VAR_DIR)
+	${INSTALL} -d ${DESTDIR}/${PREFIX}/lib/$(VAR_DIR)
+	${RM} ${DESTDIR}/${PREFIX}/lib$(VAR_DIR)/$(DLIBNAME)
+	${INSTALL} $(DLIBNAME) ${DESTDIR}/${PREFIX}/lib$(VAR_DIR)
+	if [[ -n "$(VAR_DIR)" && ! -h "${DESTDIR}/${PREFIX}/lib/64"  ]]; then \
+	    cd ${DESTDIR}/${PREFIX}/lib; \
+	    ln -s $$(basename $(VAR_DIR)) 64; \
+	else \
+		/bin/true; \
+	fi

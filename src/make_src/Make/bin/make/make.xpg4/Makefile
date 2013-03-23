@@ -31,6 +31,6 @@ include $(TOP)/rules/master.mk
 all clean clobber l10n_install:
 
 install:
-	$(INSTALL) -d $(DESTDIR)/usr/xpg4/bin
-	rm -f $(DESTDIR)/usr/xpg4/bin/make
-	ln $(DESTDIR)/usr/ccs/bin/make $(DESTDIR)/usr/xpg4/bin/make
+	$(INSTALL) -d $(DESTDIR)/$(PREFIX)/xpg4/bin
+	rm -f $(DESTDIR)/$(PREFIX)/xpg4/bin/make
+	ln $(DESTDIR)/$(PREFIX)/ccs/bin/make $(DESTDIR)/$(PREFIX)/xpg4/bin/make

@@ -61,6 +61,6 @@ $(VARIANT) $(V9_VARIANT): FRC
 	if [ ! -d $@ ]; then \
 		mkdir $@ ; \
 	fi
-	cd $@; $(MAKE) $(MFLAGS) -f $(SRC)/Variant.mk RELEASE_VER="$(RELEASE_VER)" DESTDIR=$(DESTDIR) V9FLAGS="$(V9FLAGS)" VAR_DIR=$(VAR_DIR) CC=$(CC) CCC=$(CCC) $(TARG);
+	cd $@; $(MAKE) $(MFLAGS) -f $(SRC)/Variant.mk RELEASE_VER="$(RELEASE_VER)" DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) V9FLAGS="$(V9FLAGS)" VAR_DIR=$(VAR_DIR) CC=$(CC) CCC=$(CCC) $(TARG);
 
 FRC:

@@ -110,10 +110,10 @@ IHDR		= make.rules.file
 VIHDR		= svr4.make.rules.file
 HDR		= ${PKG_TOP}/bin/make/common/make.rules.file
 VHDR		= ${PKG_TOP}/bin/make/common/svr4.make.rules.file
-HDRSDIR		= $(DESTDIR)/usr/share/lib/make
+HDRSDIR		= $(DESTDIR)/$(PREFIX)/share/lib/make
 HDRFILE		= make.rules
 VHDRFILE	= svr4.make.rules
-SMAKEDIR	= $(DESTDIR)/usr/ccs/bin
+SMAKEDIR	= $(DESTDIR)/$(PREFIX)/ccs/bin
 
 install-make-bin: make
 	$(INSTALL) -d $(SMAKEDIR)
@@ -137,7 +137,7 @@ MAKE_MSG	= SUNW_SPRO_MAKE.msg
 I18N_DIRS	= ../../common
 TEXTDOMAIN	= SUNW_SPRO_MAKE
 APPPATH		= $(PKG_TOP)/bin/make/smake/$(VARIANT)
-LIB_DESTDIR	= $(DESTDIR)/usr/lib
+LIB_DESTDIR	= $(DESTDIR)/$(PREFIX)/lib
 CAT_DESTDIR	= $(LIB_DESTDIR)/locale/C/LC_MESSAGES
 
 $(CAT_DESTDIR):

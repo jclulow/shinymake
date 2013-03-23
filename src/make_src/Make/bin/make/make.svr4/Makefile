@@ -30,9 +30,9 @@ include $(TOP)/rules/master.mk
 all clean clobber l10n_install:
 
 install:
-	$(INSTALL) -d $(DESTDIR)/usr/lib
-	$(INSTALL) -d $(DESTDIR)/usr/ccs/lib
-	rm -f $(DESTDIR)/usr/lib/svr4.make
-	rm -f $(DESTDIR)/usr/ccs/lib/svr4.make
-	ln $(DESTDIR)/usr/ccs/bin/make $(DESTDIR)/usr/lib/svr4.make
-	(cd $(DESTDIR)/usr/ccs/lib; ln -s ../../lib/svr4.make svr4.make)
+	$(INSTALL) -d $(DESTDIR)/$(PREFIX)/lib
+	$(INSTALL) -d $(DESTDIR)/$(PREFIX)/ccs/lib
+	rm -f $(DESTDIR)/$(PREFIX)/lib/svr4.make
+	rm -f $(DESTDIR)/$(PREFIX)/ccs/lib/svr4.make
+	ln $(DESTDIR)/$(PREFIX)/ccs/bin/make $(DESTDIR)/$(PREFIX)/lib/svr4.make
+	(cd $(DESTDIR)/$(PREFIX)/ccs/lib; ln -s ../../lib/svr4.make svr4.make)
