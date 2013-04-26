@@ -46,7 +46,7 @@
 #endif
 #include <errno.h>		/* errno */
 #include <fcntl.h>
-#include <avo/util.h>		/* avo_get_user(), avo_hostname() */
+/* #include <avo/util.h>*/		/* avo_get_user(), avo_hostname() */
 #include <mk/defs.h>
 #include <mksh/dosys.h>		/* redirect_io() */
 #include <mksh/macro.h>		/* expand_value() */
@@ -57,6 +57,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <netdb.h>		/* net name */
 
 #ifdef SGE_SUPPORT
 #include <dmthread/Avo_PathNames.h>
@@ -153,11 +154,14 @@ execute_parallel(Property line, Boolean waitflg, Boolean local)
 
 	if ((pmake_max_jobs == 0) &&
 	    (dmake_mode_type == parallel_mode)) {
+		/*
 		if (user_name[0] == '\0') {
 			avo_get_user(user_name, NULL);
 		}
+		*/
 		if (local_host[0] == '\0') {
-			strcpy(local_host, avo_hostname());
+		/*	strcpy(local_host, avo_hostname()); */
+			(void) gethostname(local_host, MAXNAMELEN);
 		}
 		MBSTOWCS(wcs_buffer, NOCATGETS("DMAKE_MAX_JOBS"));
 		dmake_name = GETNAME(wcs_buffer, FIND_LENGTH);
@@ -184,9 +188,13 @@ execute_parallel(Property line, Boolean waitflg, Boolean local)
 			} else {
 				make_machines_name = NULL;
 			}
+			/*
 			if ((pmake_max_jobs = read_make_machines(make_machines_name)) <= 0) {
 				pmake_max_jobs = PMAKE_DEF_MAX_JOBS;
 			}
+			*/
+			pmake_max_jobs = PMAKE_DEF_MAX_JOBS;
+
 		}
 #ifdef DISTRIBUTED
 		if (send_mtool_msgs) {
@@ -1784,6 +1792,7 @@ add_running(Name target, Name true_target, Property command, int recursion_level
 	rp->true_target = true_target;
 	rp->command = command;
 	Property spro_val = get_prop(sunpro_dependencies->prop, macro_prop);
+/*
 	if(spro_val) {
 		rp->sprodep_value = spro_val->body.macro.value;
 		spro_val->body.macro.value = NULL;
@@ -1793,6 +1802,7 @@ add_running(Name target, Name true_target, Property command, int recursion_level
 			spro_val->body.env_mem.value = NULL;
 		}
 	}
+*/
 	rp->recursion_level = recursion_level;
 	rp->do_get = do_get;
 	rp->implicit = implicit;

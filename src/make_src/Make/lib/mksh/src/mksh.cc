@@ -38,7 +38,7 @@
  * Included files
  */
 #if defined(TEAMWARE_MAKE_CMN) || defined(MAKETOOL) /* tolik */
-#	include <avo/util.h>
+/* #	include <avo/util.h> */
 #endif
 
 #include <mksh/dosys.h>		/* redirect_io() */

@@ -43,8 +43,14 @@ libmksdmsi18n_init()
 {
 	char		name[20];
 
+	/*
+	 * We don't have any messages anymore. That's just how it rolls. Because
+	 * this happens on every job and has the word error inside of it,
+	 * nightly ends up seeing these as fatal errors.
+	 */
 	if (getenv(NOCATGETS("NLSPATH")) == NULL) {
-		fprintf(stderr, NOCATGETS("Internal error: Set NLSPATH before opening catalogue file\n"));
+/*		fprintf(stderr, NOCATGETS("Internal error: Set NLSPATH before
+ *		opening catalogue file\n")); */
 		return 1;
 	}
 	sprintf(name, NOCATGETS("libmksdmsi18n_%d"), I18N_VERSION);

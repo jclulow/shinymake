@@ -58,7 +58,8 @@ YACC =		/usr/ccs/bin/yacc
 
 CPPFLAGS +=	-DINTER \
 		-I$(TOP)/include \
-		-DPREFIX=$(PREFIX)
+		-DPREFIX=$(PREFIX) \
+		-DTEAMWARE_MAKE_CMN
 
 LINTFLAGS +=	-buxz
 

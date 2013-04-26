@@ -53,6 +53,7 @@ MORE_SRC	= \
 		main.cc \
 		misc.cc \
 		nse_printdep.cc \
+		parallel.cc \
 		read.cc \
 		read2.cc \
 		rep.cc \
@@ -63,7 +64,8 @@ CPPFLAGS	+= -I$(PKG_TOP)/include
 LDLIB		+= \
 		-lnsl \
 		-lsocket \
-		-lw
+		-lw \
+		-lumem
 
 HDRS_DIR	= $(PKG_TOP)/include/mk
 HDRS_LIST	= $(HDRS_DIR)/copyright.h $(HDRS_DIR)/defs.h
@@ -114,12 +116,16 @@ HDRSDIR		= $(DESTDIR)/$(PREFIX)/share/lib/make
 HDRFILE		= make.rules
 VHDRFILE	= svr4.make.rules
 SMAKEDIR	= $(DESTDIR)/$(PREFIX)/ccs/bin
+DMAKEDIR	= $(DESTDIR)/$(PREFIX)/bin
 
 install-make-bin: make
 	$(INSTALL) -d $(SMAKEDIR)
 	$(INSTALL) make $(SMAKEDIR) 
 	mcs -d $(SMAKEDIR)/make
 	mcs -a '@(#)$(VERSTRING)' $(SMAKEDIR)/make
+	$(INSTALL) -d $(DMAKEDIR)
+	rm -f $(DMAKEDIR)/dmake
+	ln $(SMAKEDIR)/make $(DMAKEDIR)/dmake
 
 install-make-hdrs: $(HDR) $(VHDR)
 	$(INSTALL) -d $(HDRSDIR)
