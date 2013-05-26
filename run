@@ -1,0 +1,12 @@
+#!/bin/ksh
+
+DIR=$(dirname $(whence $0))
+
+set -o errexit
+
+cd src
+DESTDIR=/ \
+  PREFIX=${DIR}/BUILD \
+  MAKE=/opt/local/bin/dmake \
+  ./build
+
