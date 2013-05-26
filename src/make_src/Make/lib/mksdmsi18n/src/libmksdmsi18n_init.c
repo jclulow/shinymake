@@ -22,11 +22,6 @@
  * Copyright 1996 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)libmksdmsi18n_init.cc 1.5 06/12/12
- */
-
-#pragma	ident	"@(#)libmksdmsi18n_init.cc	1.5	06/12/12"
 
 #include <avo/intl.h>
 #include <stdio.h>
@@ -41,7 +36,7 @@ nl_catd libmksdmsi18n_catd;
 int
 libmksdmsi18n_init()
 {
-	char		name[20];
+	char name[20];
 
 	/*
 	 * We don't have any messages anymore. That's just how it rolls. Because
@@ -49,13 +44,11 @@ libmksdmsi18n_init()
 	 * nightly ends up seeing these as fatal errors.
 	 */
 	if (getenv(NOCATGETS("NLSPATH")) == NULL) {
-/*		fprintf(stderr, NOCATGETS("Internal error: Set NLSPATH before
- *		opening catalogue file\n")); */
-		return 1;
+		return (1);
 	}
 	sprintf(name, NOCATGETS("libmksdmsi18n_%d"), I18N_VERSION);
 	libmksdmsi18n_catd = catopen(name, NL_CAT_LOCALE);
-	return 0;
+	return (0);
 }
  
 /*
@@ -66,4 +59,3 @@ libmksdmsi18n_fini()
 {
 	catclose(libmksdmsi18n_catd);
 }
-

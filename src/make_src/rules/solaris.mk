@@ -48,8 +48,6 @@ RPCGEN =	/usr/5bin/rpcgen
 #
 # Flags
 #
-CPPFLAGS +=	-compat=4
 I18LIB =	-lintl
-LDFLAGS +=	-compat=4 -staticlib=libC
 LEXOPT =	-tw
 MOTIF_LD_RUN_PATH =	/usr/dt/lib:/usr/openwin/lib

@@ -22,11 +22,6 @@
  * Copyright 2004 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)bsd.cc 1.6 06/12/12
- */
-
-#pragma	ident	"@(#)bsd.cc	1.6	06/12/12"
 
 #include <signal.h>
 
@@ -40,7 +35,7 @@
 
 /* Static data.
  */
-
+
 extern SIG_PF
 bsd_signal (int Signal, SIG_PF Handler)
 {
@@ -68,7 +63,7 @@ bsd_signal (int Signal, SIG_PF Handler)
 #endif
   return previous_handler;
 }
-
+
 extern void
 bsd_signals (void)
 {
