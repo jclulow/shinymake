@@ -127,5 +127,3 @@ catalogs::
 FRC:
 
 include $(TOP)/rules/l10n-install.mk
-
-include $(TOP)/rules/computed-options.mk

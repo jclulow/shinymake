@@ -59,5 +59,3 @@ clean:
 PROG_DIR =	bin
 
 include $(TOP)/rules/install.mk
-
-include $(TOP)/rules/computed-options.mk

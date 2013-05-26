@@ -88,8 +88,6 @@ clean:
 	$(RM) $(OBJS) $(PROG)
 
 
-include $(TOP)/rules/computed-options.mk
-
 #
 # This LIB macro must be declared after the include's above
 #
