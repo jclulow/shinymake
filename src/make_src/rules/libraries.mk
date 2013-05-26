@@ -59,4 +59,4 @@ LIBPATHUTILS =	-lpathutils
 LIBPSCCHART =	-lpscchart
 LIBPSCHART =	-lpschart
 LIBTIMELINE =	-ltimeline
-LIBXPM =		$(BSTATIC) -lXpm $(BDYNAMIC)
+LIBXPM =	-lXpm

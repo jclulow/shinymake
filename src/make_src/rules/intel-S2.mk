@@ -45,16 +45,10 @@ TOOLS_PATH =	$(TOP)/exe
 # Flags
 #
 CPPFLAGS +=	-DSUN5_0 -DSYSV -Dx86
+CFLAGS +=	-fPIC
 
 #
 # amd64-S2 Flags
 #
-amd64-S2 := V9FLAGS = -O -xarch=amd64
+amd64-S2 := V9FLAGS = -m64
 amd64-S2 := VAR_DIR = /amd64
-
-#
-# This is temporary until both 32- and 64-bit stuff are to be compiled
-# with the same compiler.
-#
-amd64-S2 := CC = $(CC64)
-amd64-S2 := CCC = $(CCC64)

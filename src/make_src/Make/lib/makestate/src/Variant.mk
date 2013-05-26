@@ -42,7 +42,7 @@ DLIBNAME =	libmakestate.so.1
 MSG_FILE = libmakestate.msg
 I18N_DIRS = $(SRC)
 
-CFLAGS += $(V9FLAGS) -KPIC -DTEXT_DOMAIN=\"SUNW_OST_OSLIB\"
+CFLAGS += $(V9FLAGS) -DTEXT_DOMAIN=\"SUNW_OST_OSLIB\"
 CPPFLAGS=
 
 #include $(TOP)/Make/lib/Lib.mk
@@ -61,7 +61,8 @@ PROCESS_COMMENT=	mcs -a $(RELEASE_CM)
 POST_PROCESS_SO=	$(PROCESS_COMMENT) $@
 
 $(DLIBNAME) : $(LIBNAME)
-	$(CC) $(V9FLAGS) -o $@ -dy -G -ztext -h $@ ld_file.o lock.o -lelf
+	$(CC) $(CFLAGS) $(V9FLAGS) -o $@ -shared -Wl,-ztext -Wl,-h$@ \
+	    ld_file.o lock.o -lelf -lc
 	mcs -d $@
 	${POST_PROCESS_SO}
 

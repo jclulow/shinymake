@@ -22,10 +22,6 @@
  * Copyright 1998 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)ld_file.c 1.7 06/12/12
- */
-#pragma ident	"@(#)ld_file.c	1.7	06/12/12"
 
 #pragma init(ld_support_init)
 
@@ -37,6 +33,8 @@
 #include <sys/param.h>
 #include <link.h>
 
+#define	__UNUSED	__attribute__((unused))
+
 #define	SUNPRO_DEPENDENCIES	"SUNPRO_DEPENDENCIES"
 
 /*
@@ -44,49 +42,47 @@
  * of directories or files.
  */
 
-struct Stritem {
-	char *		str;
-	void *		next;
-};
+typedef struct Stritem {
+	char *str;
+	void *next;
+} Stritem;
 
-typedef struct Stritem 	Stritem;
-
-static char 		* depend_file = NULL;
-static Stritem		* list = NULL;
+static char *depend_file = NULL;
+static Stritem *list = NULL;
 
 
-void mk_state_init()
+void
+mk_state_init()
 {
 	depend_file = getenv(SUNPRO_DEPENDENCIES);
-} /* mk_state_init() */
+}
 
 
 
 static void
-prepend_str(Stritem **list, const char * str)
+prepend_str(Stritem **list, const char *str)
 {
-	Stritem * new;
-	char 	* newstr;
+	Stritem *new;
+	char *newstr;
 
 	if (!(new = calloc(1, sizeof (Stritem)))) {
 		perror("libmakestate.so");
 		return;
-	} /* if */
+	}
 
 	if (!(newstr = malloc(strlen(str) + 1))) {
 		perror("libmakestate.so");
 		return;
-	} /* if */
+	}
 
 	new->str = strcpy(newstr, str);
 	new->next = *list;
 	*list = new;
-
-} /* prepend_str() */
+}
 
 
 void
-mk_state_collect_dep(const char * file)
+mk_state_collect_dep(const char *file)
 {
 	/*
 	 * SUNPRO_DEPENDENCIES wasn't set, we don't collect .make.state
@@ -97,7 +93,7 @@ mk_state_collect_dep(const char * file)
 
 	prepend_str(&list, file);
 
-}  /* mk_state_collect_dep() */
+}
 
 
 void
@@ -137,26 +133,25 @@ mk_state_update_exit()
 	(void) unlink(lockfile);
 	*space = ' ';
 
-} /* mk_state_update_exit() */
+}
 
 static void
-/* LINTED static unused */
 ld_support_init()
 {
 	mk_state_init();
 
-} /* ld_support_init() */
+}
 
-/* ARGSUSED */
 void
-ld_file(const char * file, const Elf_Kind ekind, int flags, Elf *elf)
+ld_file(const char * file, const Elf_Kind ekind __UNUSED, int flags,
+    Elf *elf __UNUSED)
 {
 	if(! ((flags & LD_SUP_DERIVED) && !(flags & LD_SUP_EXTRACTED)))
 		return;
 
 	mk_state_collect_dep(file);
 
-} /* ld_file */
+}
 
 void
 ld_atexit(int exit_code)
@@ -166,20 +161,21 @@ ld_atexit(int exit_code)
 	
 	mk_state_update_exit();
 
-} /* ld_atexit() */
+}
 
 /*
  * Supporting 64-bit objects
  */
 void
-ld_file64(const char * file, const Elf_Kind ekind, int flags, Elf *elf)
+ld_file64(const char * file, const Elf_Kind ekind __UNUSED, int flags,
+    Elf *elf __UNUSED)
 {
 	if(! ((flags & LD_SUP_DERIVED) && !(flags & LD_SUP_EXTRACTED)))
 		return;
 
 	mk_state_collect_dep(file);
 
-} /* ld_file64 */
+}
 
 void
 ld_atexit64(int exit_code)
@@ -189,4 +185,4 @@ ld_atexit64(int exit_code)
 	
 	mk_state_update_exit();
 
-} /* ld_atexit64() */
+}

@@ -56,6 +56,8 @@ YACC =		/usr/ccs/bin/yacc
 
 ##-----------------------------------------------------------------
 
+CFLAGS +=	-Wall -Wextra -Werror
+
 CPPFLAGS +=	-DINTER \
 		-I$(TOP)/include \
 		-DPREFIX=$(PREFIX) \

@@ -4,9 +4,16 @@ DIR=$(dirname $(whence $0))
 
 set -o errexit
 
-cd src
-DESTDIR=/ \
-  PREFIX=${DIR}/BUILD \
-  MAKE=/opt/local/bin/dmake \
-  ./build
+export DESTDIR=/
+export PREFIX=${DIR}/BUILD
+export MAKE=/opt/local/bin/dmake
+
+rm -rf ${DIR}/BUILD
+
+cd $DIR/src
+
+echo "cleaning ..."
+./build clean
+echo "building ..."
+./build install
 
