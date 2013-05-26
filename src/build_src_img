@@ -1,0 +1,93 @@
+#!/bin/csh -f
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+# Copyright 2006 Sun Microsystems, Inc. All rights reserved.
+# Use is subject to license terms.
+#
+# @(#)build_src_img 1.13 06/12/13
+#
+
+
+#	This script creates a "tarball" distribution image of the "make" source code.
+#
+#	See also "./README" for a description of its use
+#
+#
+#	Optional environment variables:
+#
+#	   name		typical use			description
+#
+#	SRCIMGFILE	$SRCIMGFILE''.bz2	bzipped tarball image
+
+if ( $#argv > 0 ) then
+    echo 'usage: build_src_img'
+    exit 0
+endif
+
+# Set up environment variable.  User-supplied value is respected.
+# If the variable is not set by the user, a default is supplied.
+
+if ( ! $?SRCIMGFILE ) then
+    setenv SRCIMGFILE ../../imgdir/devpro-make-src-`/usr/bin/date -u +'%'Y'%'m'%'d`.tar
+endif
+
+# Ensure that the path to $SRCIMGFILE exists, and is absolute.
+
+set t = $SRCIMGFILE
+
+if ( Z$t =~ Z*/* ) then
+    set sifd = $t:h
+    set sifn = $t:t
+else
+    set sifd = .
+    set sifn = $t
+endif
+
+if ( ! -d $sifd ) then
+    mkdir -p $sifd
+endif
+
+set p = `pwd`
+cd $sifd
+setenv SRCIMGFILE `pwd`/$sifn
+cd $p
+
+echo
+echo === starting build of source image ===
+echo
+echo Using variable:
+echo
+echo '	'SRCIMGFILE = $SRCIMGFILE
+
+# Create and compress the "tarball".
+
+cd ../..
+
+rm -f $SRCIMGFILE $SRCIMGFILE''.bz2
+
+tar cf $SRCIMGFILE ./README ./ReleaseNotes ./usr/src
+
+bzip2 $SRCIMGFILE
+
+echo
+echo === build of source image complete ===
+echo
+ls -l $SRCIMGFILE''*

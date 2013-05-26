@@ -1,0 +1,108 @@
+#!/bin/csh -f
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+# Copyright 2006 Sun Microsystems, Inc. All rights reserved.
+# Use is subject to license terms.
+#
+# @(#)build_bin_img 1.18 06/12/18
+#
+
+
+#	This script creates a "tarball" distribution image of the "make" executable.
+#
+#	See also "./README" for a description of its use.
+#
+#
+#	Optional environment variables:
+#
+#	   name		typical use			description
+#
+#	DESTDIR		$DESTDIR/usr/ccs	root of installation tree
+#	BINIMGFILE	$BINIMGFILE''.bz2	bzipped tarball image
+
+
+if ( $#argv > 0 ) then
+    echo 'usage: build_bin_img'
+    exit 0
+endif
+
+# Set up environment variables.  User-supplied values are respected.
+# If the variable is not set by the user, a default is supplied.
+
+if ( ! $?DESTDIR ) then
+    setenv DESTDIR ../../destdir/root_`uname -p`
+endif
+
+if ( ! $?BINIMGFILE ) then
+    setenv BINIMGFILE ../../imgdir/devpro-make-open-bins-`/usr/bin/date -u +'%'Y'%'m'%'d`.`uname -p`.tar
+endif
+
+# Compile the sources to produce the "make" binaries.  See "./README"
+# for details.
+
+./build
+
+# Ensure that the path to $BINIMGFILE exists, and is absolute.
+
+set t = $BINIMGFILE
+
+if ( Z$BINIMGFILE =~ Z*/* ) then
+    set bifd = $t:h
+    set bifn = $t:t
+else
+    set bifd = .
+    set bifn = $t
+endif
+
+mkdir -p $bifd
+
+set p = `pwd`
+cd $bifd
+setenv BINIMGFILE `pwd`/$bifn
+cd $p
+
+# Ensure that $DESTDIR is absolute.
+
+set p = `pwd`
+cd $DESTDIR
+setenv DESTDIR `pwd`
+cd $p
+
+echo
+echo === starting build of binary image ===
+echo
+echo Using variables:
+echo
+echo '	'DESTDIR = $DESTDIR
+echo '	'BINIMGFILE = $BINIMGFILE
+
+# Create and compress the "tarball".
+
+rm -f $BINIMGFILE $BINIMGFILE''.bz2
+
+tar cf $BINIMGFILE -C $DESTDIR .
+
+bzip2 $BINIMGFILE
+
+echo
+echo === build of binary image complete ===
+echo
+ls -l $BINIMGFILE''*

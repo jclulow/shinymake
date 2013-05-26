@@ -1,0 +1,127 @@
+#!/bin/csh -f
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+# Copyright 2006 Sun Microsystems, Inc. All rights reserved.
+# Use is subject to license terms.
+#
+# @(#)build 1.15 06/12/18
+#
+
+
+#	This script compiles the "make" sources to produce a "make"
+#	executable.
+#
+#	See also "./README" for a description of its use.
+#
+#
+#	Optional environment variables:
+#
+#	   name		typical use			description
+#
+#	STUDIOBIN	$STUDIOBIN/cc		installation of the Sun Studio compilers
+#	CC		$CC -c x.c		preferred C compiler
+#	CCC		$CCC -c x.cc		preferred C++ compiler
+#	MAKE		$MAKE {target}		preferred "make" executable
+#	DESTDIR		$DESTDIR/usr/ccs	root of installation tree
+
+# Legal arguments are "clean", "all", and "install".  The default
+# is "install".
+
+set erruse = 0
+
+if ( $#argv == 0 ) then
+    set args = ( install )
+else if ( $#argv == 1 ) then 
+    if ( ( $argv[1] == clean ) || ( $argv[1] == all ) || ( $argv[1] == install ) ) then
+	set args = ( $argv )
+    else
+	set erruse = 1
+    endif
+else
+    set erruse = 1
+endif
+
+if ( $erruse ) then
+    echo 'usage: build [ clean | all | install ]'
+    exit 0
+endif
+
+# Set up environment variables.  User-supplied values are respected.
+# If the variable is not set by the user, a default is supplied.
+# If CC, CCC, or MAKE are not set, they are derived from STUDIOBIN
+
+if ( ! $?STUDIOBIN ) then
+    setenv STUDIOBIN /opt/SUNWspro/bin
+endif
+
+if ( ! $?CC ) then
+    setenv CC ${STUDIOBIN}/cc
+endif
+
+if ( ! $?CCC ) then
+    setenv CCC ${STUDIOBIN}/CC
+endif
+
+if ( ! $?MAKE ) then
+    setenv MAKE "${STUDIOBIN}/dmake -m serial"
+endif
+
+setenv CC64 $CC
+setenv CCC64 $CCC
+
+if ( ! $?DESTDIR ) then
+    setenv DESTDIR ../../destdir/root_`uname -p`
+endif
+
+# Ensure that $DESTDIR exists, and is absolute.
+
+if ( ! -d $DESTDIR ) then
+    mkdir -p $DESTDIR
+endif
+
+set p = `pwd`
+cd $DESTDIR
+setenv DESTDIR `pwd`
+cd $p
+
+cd ./make_src
+
+# Do the build itself, using .../make_src/Makefile.
+
+echo
+echo === starting build ===
+echo
+echo Using variables:
+echo
+echo '	'CC = $CC
+echo '	'CCC = $CCC
+echo '	'DESTDIR = $DESTDIR
+echo '	'MAKE = $MAKE
+echo '	'STUDIOBIN = $STUDIOBIN
+echo
+$MAKE CC=${CC} CCC=${CCC} DESTDIR=${DESTDIR} MAKE=${MAKE} $args
+echo
+echo === build complete ===
+echo
+echo Binaries installed at $DESTDIR':'
+echo
+cd $DESTDIR
+find . -type f -print | sed 's/^/	/'
