@@ -24,11 +24,6 @@
  * Copyright 2004 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)misc.h 1.4 06/12/12
- */
-
-#pragma	ident	"@(#)misc.h	1.4	06/12/12"
 
 #include <mksh/defs.h>
 
@@ -57,4 +52,4 @@ extern void	append_string(register char *from, register String to, register int 
 extern wchar_t	*get_wstring(char * from);
 
 
-#endif
+#endif	/* _MKSH_MISC_H */

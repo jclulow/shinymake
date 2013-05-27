@@ -24,11 +24,6 @@
  * Copyright 2004 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)defs.h 1.35 06/12/12
- */
-
-#pragma	ident	"@(#)defs.h	1.35	06/12/12"
 
 /*
  * This is not "#ifdef TEAMWARE_MAKE_CMN" because we're currently
@@ -47,31 +42,8 @@
 #include <vroot/vroot.h>	/* pathpt */
 #include <sys/time.h>		/* timestruc_t */
 #include <errno.h>		/* errno */
-
-#if defined (HP_UX) || defined (linux)
-#define  MAXNAMELEN           256
-#define  RW_NO_OVERLOAD_WCHAR 1  /* Rogue Wave, belongs in <rw/compiler.h> */
-#else
 #include <wctype.h>
 #include <widec.h>
-#endif
-
-#if defined (linux)
-/*
- * Definition of wchar functions.
- */
-#	include <wctype.h>
-#	include <wchar.h>
-#	define wsdup(x) wcsdup(x)
-#	define wschr(x,y) wcschr(x,y)
-#	define wscat(x,y) wcscat(x,y)
-#	define wsrchr(x,y) wcsrchr(x,y)
-#	define wslen(x) wcslen(x)
-#	define wscpy(x,y) wcscpy(x,y)
-#	define wsncpy(x,y,z) wcsncpy(x,y,z)
-#	define wscmp(x,y) wcscmp(x,y)
-#	define wsncmp(x,y,z) wcsncmp(x,y,z)
-#endif
 
 /*
  * A type and some utilities for boolean values

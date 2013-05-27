@@ -22,23 +22,15 @@
  * Copyright 1996 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)mksdmsi18n.h 1.3 06/12/12
- */
-
-#pragma	ident	"@(#)mksdmsi18n.h	1.3	06/12/12"
 
 #ifndef _AVO_MKSDMSI18N_H
 #define _AVO_MKSDMSI18N_H
 
-#ifndef _AVO_INTL_H
 #include <avo/intl.h>
-#endif
 
 extern	nl_catd	libmksdmsi18n_catd;
 
 int	libmksdmsi18n_init();
 void	libmksdmsi18n_fini();
 
-#endif
-
+#endif	/* _AVO_MKSDMSI18N_H */

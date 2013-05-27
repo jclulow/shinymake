@@ -22,14 +22,9 @@
  * Copyright 2004 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)mksh.cc 1.22 06/12/12
- */
-
-#pragma	ident	"@(#)mksh.cc	1.22	06/12/12"
 
 /*
- *	mksh.cc
+ *	mksh.c
  *
  *	Execute the command(s) of one Make or DMake rule
  */
@@ -37,9 +32,6 @@
 /*
  * Included files
  */
-#if defined(TEAMWARE_MAKE_CMN) || defined(MAKETOOL) /* tolik */
-/* #	include <avo/util.h> */
-#endif
 
 #include <mksh/dosys.h>		/* redirect_io() */
 #include <mksh/misc.h>		/* retmem() */
@@ -47,10 +39,6 @@
 #include <mksdmsi18n/mksdmsi18n.h>
 #include <errno.h>
 #include <signal.h>
-
-#ifdef HP_UX
-	extern void (*sigset(int, void (*)(__harg)))(__harg);
-#endif
 
 /*
  * Workaround for NFS bug. Sometimes, when running 'chdir' on a remote

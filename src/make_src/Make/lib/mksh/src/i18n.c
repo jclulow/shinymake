@@ -22,14 +22,9 @@
  * Copyright 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)i18n.cc 1.3 06/12/12
- */
-
-#pragma	ident	"@(#)i18n.cc	1.3	06/12/12"
 
 /*
- *      i18n.cc
+ *      i18n.c
  *
  *      Deal with internationalization conversions
  */
@@ -39,11 +34,6 @@
  */
 #include <mksh/i18n.h>
 #include <mksh/misc.h>		/* setup_char_semantics() */
-#if defined (linux)
-#	include <wctype.h>
-#	include <wchar.h>
-#	define wschr(x,y) wcschr(x,y)
-#endif
 
 /*
  *	get_char_semantics_value(ch)

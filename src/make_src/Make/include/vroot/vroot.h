@@ -22,11 +22,6 @@
  * Copyright 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)vroot.h 1.10 06/12/12
- */
-
-#pragma	ident	"@(#)vroot.h	1.10	06/12/12"
 
 #ifndef _VROOT_H_
 #define _VROOT_H_
@@ -64,4 +59,4 @@ extern	int		readlink_vroot(char *path, char *buffer, int buffer_size, pathpt vro
 
 
 extern nl_catd	libvroot_catd;
-#endif
+#endif	/* _VROOT_H_ */

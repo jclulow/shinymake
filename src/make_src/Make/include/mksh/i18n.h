@@ -24,15 +24,10 @@
  * Copyright 1994 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)i18n.h 1.2 06/12/12
- */
-
-#pragma	ident	"@(#)i18n.h	1.2	06/12/12"
 
 #include <mksh/defs.h>
 
 extern int	get_char_semantics_entry(wchar_t ch);
 extern char	get_char_semantics_value(wchar_t ch);
 
-#endif
+#endif	/* _MKSH_I18N_H */
