@@ -27,10 +27,12 @@
 
 #include <mksh/defs.h>
 
-extern void	expand_macro(register Source source, register String destination, wchar_t *current_string, Boolean cmd);
-extern void	expand_value(Name value, register String destination, Boolean cmd);
-extern Name	getvar(register Name name);
+void expand_macro(source_t *source, string_t *destination,
+    wchar_t *current_string, boolean_t cmd);
+void expand_value(name_t *value, string_t *destination, boolean_t cmd);
+name_t *getvar(name_t *name);
 
-extern Property	setvar_daemon(register Name name, register Name value, Boolean append, Daemon daemon, Boolean strip_trailing_spaces, short debug_level);
+property_t *setvar_daemon(name_t *name, name_t *value, boolean_t append,
+    daemon_t daemon, boolean_t strip_trailing_spaces, short debug_level);
 
-#endif
+#endif	/* _MKSH_MACRO_H */

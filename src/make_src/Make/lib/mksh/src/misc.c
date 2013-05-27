@@ -97,56 +97,25 @@ static void	expand_string(register String string, register int length);
 
 #define	FATAL_ERROR_MSG_SIZE 200
 
-/*
- *	getmem(size)
- *
- *	malloc() version that checks the returned value.
- *
- *	Return value:
- *				The memory chunk we allocated
- *
- *	Parameters:
- *		size		The size of the chunk we need
- *
- *	Global variables used:
- */
-char *
-getmem(register int size)
+static void
+classify_nameblock(name_t *n)
 {
-	register char          *result = (char *) malloc((unsigned) size);
-	if (result == NULL) {
-		char buf[FATAL_ERROR_MSG_SIZE];
-		sprintf(buf, NOCATGETS("*** Error: malloc(%d) failed: %s\n"), size, strerror(errno));
-		strcat(buf, catgets(libmksdmsi18n_catd, 1, 126, "mksh: Fatal error: Out of memory\n"));
-		fputs(buf, stderr);
-#ifdef SUN5_0
-		exit_status = 1;
-#endif
-		exit(1);
+	char_class_t sems = CHC_NONE;
+	wchar_t *pos;
+
+	/*
+	 * Scan the namestring to classify it:
+	 */
+	for (pos = n->n_key; *pos != (wchar_t)0; pos++) {
+		sems |= get_char_semantics_value(*pos);
 	}
-	return result;
-}
 
-/*
- *	retmem(p)
- *
- *	Cover funtion for free() to make it possible to insert advises.
- *
- *	Parameters:
- *		p		The memory block to free
- *
- *	Global variables used:
- */
-void
-retmem(wchar_t *p)
-{
-	(void) free((char *) p);
-}
-
-void
-retmem_mb(caddr_t p)
-{
-	(void) free(p);
+	np->n_dollar = (sems & CHC_DOLLAR) != 0 ? B_TRUE : B_FALSE;
+	np->n_meta = (sems & CHC_META) != 0 ? B_TRUE : B_FALSE;
+	np->n_percent = (sems & CHC_PERCENT) != 0 ? B_TRUE : B_FALSE;
+	np->n_wildcard = (sems & CHC_WILDCARD) != 0 ? B_TRUE : B_FALSE;
+	np->n_colon = (sems & CHC_COLON) != 0 ? B_TRUE : B_FALSE;
+	np->n_parenleft = (sems & CHC_PARENLEFT) != 0 ? B_TRUE : B_FALSE;
 }
 
 /*
@@ -166,101 +135,64 @@ retmem_mb(caddr_t p)
  *		funny		The vector of semantic tags for characters
  *		hashtab		The hashtable used for the nametable
  */
-Name
-getname_fn(wchar_t *name, register int len, register Boolean dont_enter, register Boolean * foundp)
+name_t *
+getname_fn(wchar_t *name, int _len, boolean_t dont_enter, boolean_t *foundp)
 {
-	register int		length;
-	register wchar_t	*cap = name;
-	register Name		np;
-	static Name_rec		empty_Name;
-	char			*tmp_mbs_buffer = NULL;
-	char			*mbs_name = mbs_buffer;
+	int length;
+	wchar_t	*cap = name;
+	name_t *np = NULL;
+	boolean_t found = B_FALSE;
 
 	/*
 	 * First figure out how long the string is.
 	 * If the len argument is -1 we count the chars here.
 	 */
-	if (len == FIND_LENGTH) {
-		length = wslen(name);
+	if (_len == FIND_LENGTH) {
+		length = wcslen(name);
 	} else {
-		length = len;
+		abort(); /* XXX SIGH */
+		length = _len;
 	}
 
-	Wstring ws;
-	ws.init(name, length);
-	if (length >= MAXPATHLEN) {
-		mbs_name = tmp_mbs_buffer = getmem((length * MB_LEN_MAX) + 1);
-	}
-	(void) wcstombs(mbs_name, ws.get_string(), (length * MB_LEN_MAX) + 1);
+	if (dont_enter == B_TRUE) {
+		/*
+		 * We do not wish to create the entry if it does not
+		 * exist, so just look for it.
+		 */
+		np = nms_lookup(hashtab, name);
 
-	/* Look for the string */
-	if (dont_enter || (foundp != 0)) {
-		np = hashtab.lookup(mbs_name);
-		if (foundp != 0) {
-			*foundp = (np != 0) ? true : false;
-		}
-		if ((np != 0) || dont_enter) {
-			if(tmp_mbs_buffer != NULL) {
-				retmem_mb(tmp_mbs_buffer);
-			}
-			return np;
-		} else {
-			np = ALLOC(Name);
-		}
-	} else {
-		Boolean found;
-		np = hashtab.insert(mbs_name, found);
-		if (found) {
-			if(tmp_mbs_buffer != NULL) {
-				retmem_mb(tmp_mbs_buffer);
-			}
-			return np;
-		}
-	}
-	getname_struct_count += sizeof(struct _Name);
-	*np = empty_Name;
+		if (foundp != NULL)
+			*foundp = (np != NULL) ? B_TRUE : B_FALSE;
 
-	np->string_mb = strdup(mbs_name);
-	if(tmp_mbs_buffer != NULL) {
-		retmem_mb(tmp_mbs_buffer);
-		mbs_name = tmp_mbs_buffer = NULL;
+		return (np);
 	}
-	getname_bytes_count += strlen(np->string_mb) + 1;
-	/* Fill in the new Name */
-	np->stat.time = file_no_time;
-	np->hash.length = length;
-	/* Scan the namestring to classify it */
-	for (cap = name, len = 0; --length >= 0;) {
-		len |= get_char_semantics_value(*cap++);
-	}
-	np->dollar = BOOLEAN((len & (int) dollar_sem) != 0);
-	np->meta = BOOLEAN((len & (int) meta_sem) != 0);
-	np->percent = BOOLEAN((len & (int) percent_sem) != 0);
-	np->wildcard = BOOLEAN((len & (int) wildcard_sem) != 0);
-	np->colon = BOOLEAN((len & (int) colon_sem) != 0);
-	np->parenleft = BOOLEAN((len & (int) parenleft_sem) != 0);
-	getname_names_count++;
-	return np;
+
+	/*
+	 * Locate an existing or create a new entry in the hash table:
+	 */
+	np = nms_insert(hashtab, name, &found);
+	if (found == B_TRUE)
+		return (np);
+
+	/*
+	 * Our nameblock is new, so initialise it:
+	 */
+	np->n_stat.ns_time = file_no_time;
+	classify_nameblock(np);
+
+	return (np);
 }
 
 void
-store_name(Name name)
+store_name(name_t *n)
 {
-	hashtab.insert(name);
+	nms_insert_name(hashtab, n);
 }
 
 void
-free_name(Name name)
+free_name(name_t *n)
 {
-	freename_names_count++;
-	freename_struct_count += sizeof(struct _Name);
-	freename_bytes_count += strlen(name->string_mb) + 1;
-	retmem_mb(name->string_mb);
-	for (Property next, p = name->prop; p != NULL; p = next) {
-		next = p->next;
-		free(p);
-	}
-	free(name);
+	name_free(n);
 }
 
 /*
@@ -335,24 +267,24 @@ setup_char_semantics(void)
 	}
 	for (s; MBTOWC(wc_buffer, s); s++) {
 		entry = get_char_semantics_entry(*wc_buffer);
-		char_semantics[entry] |= (int) command_prefix_sem;
+		char_semantics[entry] |= CHC_COMMAND_PREFIX;
 	}
-	char_semantics[dollar_char_entry] |= (int) dollar_sem;
+	char_semantics[dollar_char_entry] |= CHC_DOLLAR;
 	for (s = "#|=^();&<>*?[]:$`'\"\\\n"; MBTOWC(wc_buffer, s); s++) {
 		entry = get_char_semantics_entry(*wc_buffer);
-		char_semantics[entry] |= (int) meta_sem;
+		char_semantics[entry] |= CHC_META;
 	}
-	char_semantics[percent_char_entry] |= (int) percent_sem;
+	char_semantics[percent_char_entry] |= CHC_PERCENT;
 	for (s = "@*<%?^"; MBTOWC(wc_buffer, s); s++) {
 		entry = get_char_semantics_entry(*wc_buffer);
-		char_semantics[entry] |= (int) special_macro_sem;
+		char_semantics[entry] |= CHC_SPECIAL_MACRO;
 	}
 	for (s = "?[*"; MBTOWC(wc_buffer, s); s++) {
 		entry = get_char_semantics_entry(*wc_buffer);
-		char_semantics[entry] |= (int) wildcard_sem;
+		char_semantics[entry] |= CHC_WILDCARD;
 	}
-	char_semantics[colon_char_entry] |= (int) colon_sem;
-	char_semantics[parenleft_char_entry] |= (int) parenleft_sem;
+	char_semantics[colon_char_entry] |= CHC_COLON;
+	char_semantics[parenleft_char_entry] |= CHC_PARENLEFT;
 }
 
 /*
@@ -373,30 +305,18 @@ setup_char_semantics(void)
 char *
 errmsg(int errnum)
 {
-#ifdef linux
-	return strerror(errnum);
-#else // linux
-
-	extern int		sys_nerr;
-#ifdef SUN4_x
-	extern char		*sys_errlist[];
-#endif
-	char			*errbuf;
+	extern int sys_nerr;
+	char *errbuf;
 
 	if ((errnum < 0) || (errnum > sys_nerr)) {
-		errbuf = getmem(6+1+11+1);
-		(void) sprintf(errbuf, catgets(libmksdmsi18n_catd, 1, 127, "Error %d"), errnum);
-		return errbuf;
+		errbuf = xmalloc(6+1+11+1);
+		(void) sprintf(errbuf, catgets(libmksdmsi18n_catd, 1, 127,
+		    "Error %d"), errnum);
+		return (errbuf);
 	} else {
-#ifdef SUN4_x
-		return(sys_errlist[errnum]);
-#endif
-#ifdef SUN5_0
-		return strerror(errnum);
-#endif
+		return (strerror(errnum));
 
 	}
-#endif // linux
 }
 
 static char static_buf[MAXPATHLEN*3];
@@ -432,7 +352,7 @@ fatal_mksh(char * message, ...)
 			+ 3; // "\n\n"
 	va_end(args);
 	if (buf_len >= sizeof(static_buf)) {
-		buf = getmem(buf_len);
+		buf = xmalloc(buf_len);
 		(void) strcpy(buf, mksh_fat_err);
 		va_start(args, message);
 		(void) vsprintf(buf + mksh_fat_err_len, message, args);
@@ -450,7 +370,7 @@ fatal_mksh(char * message, ...)
 	(void) fputs(buf, stderr);
 	(void) fflush(stderr);
 	if (buf != static_buf) {
-		retmem_mb(buf);
+		free(buf);
 	}
 #ifdef SUN5_0
 	exit_status = 1;
@@ -570,18 +490,14 @@ get_current_path_mksh(void)
 	static char		*current_path;
 
 	if (current_path == NULL) {
-#if defined(SUN5_0) || defined(HP_UX) || defined(linux)
 		getcwd(pwd, sizeof(pwd));
-#else
-		(void) getwd(pwd);
-#endif
 		if (pwd[0] == (int) nul_char) {
 			pwd[0] = (int) slash_char;
 			pwd[1] = (int) nul_char;
 		}
-		current_path = strdup(pwd);
+		current_path = xstrdup(pwd);
 	}
-	return current_path;
+	return (current_path);
 }
 
 /*
@@ -599,65 +515,24 @@ get_current_path_mksh(void)
  *	Global variables used:
  */
 Property
-append_prop(register Name target, register Property_id type)
+append_prop(name_t *target, property_id_t type)
 {
-	register Property	*insert = &target->prop;
-	register Property	prop = *insert;
-	register int		size;
+	property_t *prop;
 
-	switch (type) {
-	case conditional_prop:
-		size = sizeof (struct Conditional);
-		break;
-	case line_prop:
-		size = sizeof (struct Line);
-		break;
-	case macro_prop:
-		size = sizeof (struct _Macro);
-		break;
-	case makefile_prop:
-		size = sizeof (struct Makefile);
-		break;
-	case member_prop:
-		size = sizeof (struct Member);
-		break;
-	case recursive_prop:
-		size = sizeof (struct Recursive);
-		break;
-	case sccs_prop:
-		size = sizeof (struct Sccs);
-		break;
-	case suffix_prop:
-		size = sizeof (struct Suffix);
-		break;
-	case target_prop:
-		size = sizeof (struct Target);
-		break;
-	case time_prop:
-		size = sizeof (struct STime);
-		break;
-	case vpath_alias_prop:
-		size = sizeof (struct Vpath_alias);
-		break;
-	case long_member_name_prop:
-		size = sizeof (struct Long_member_name);
-		break;
-	case macro_append_prop:
-		size = sizeof (struct _Macro_appendix);
-		break;
-	case env_mem_prop:
-		size = sizeof (struct _Env_mem);
-		break;
-	default:
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 136, "Internal error. Unknown prop type %d"), type);
+	prop = zxmalloc(sizeof (*prop));
+	prop->p_body = zxmalloc(property_body_size(type));
+	prop->p_type = type;
+
+	if (target->p_prop == NULL) {
+		target->p_prop = prop;
+	} else {
+		property_t *last;
+		while (last->p_next != NULL)
+			last = last->p_next;
+		last->p_next = prop;
 	}
-	for (; prop != NULL; insert = &prop->next, prop = *insert);
-	size += PROPERTY_HEAD_SIZE;
-	*insert = prop = (Property) getmem(size);
-	memset((char *) prop, 0, size);
-	prop->type = type;
-	prop->next = NULL;
-	return prop;
+
+	return (prop);
 }
 
 /*
@@ -675,15 +550,15 @@ append_prop(register Name target, register Property_id type)
  *
  *	Global variables used:
  */
-Property
-maybe_append_prop(register Name target, register Property_id type)
+property_t *
+maybe_append_prop(name_t *target, property_id_t type)
 {
-	register Property	prop;
+	property_t *prop;
 
-	if ((prop = get_prop(target->prop, type)) != NULL) {
-		return prop;
-	}
-	return append_prop(target, type);
+	if ((prop = get_prop(target->n_prop, type)) != NULL)
+		return (prop);
+
+	return (append_prop(target, type));
 }
 
 /*
@@ -701,152 +576,15 @@ maybe_append_prop(register Name target, register Property_id type)
  *
  *	Global variables used:
  */
-Property
-get_prop(register Property start, register Property_id type)
+property_t *
+get_prop(property_t *start, property_id_t type)
 {
-	for (; start != NULL; start = start->next) {
-		if (start->type == type) {
-			return start;
+	for (; start != NULL; start = start->p_next) {
+		if (start->p_type == type) {
+			return (start);
 		}
 	}
-	return NULL;
-}
-
-/*
- *	append_string(from, to, length)
- *
- *	Append a C string to a make string expanding it if nessecary
- *
- *	Parameters:
- *		from		The source (C style) string
- *		to		The destination (make style) string
- *		length		The length of the from string
- *
- *	Global variables used:
- */
-void
-append_string(register wchar_t *from, register String to, register int length)
-{
-	if (length == FIND_LENGTH) {
-		length = wslen(from);
-	}
-	if (to->buffer.start == NULL) {
-		expand_string(to, 32 + length);
-	}
-	if (to->buffer.end - to->text.p <= length) {
-		expand_string(to,
-			      (to->buffer.end - to->buffer.start) * 2 +
-			      length);
-	}
-	if (length > 0) {
-		(void) wsncpy(to->text.p, from, length);
-		to->text.p += length;
-	}
-	*(to->text.p) = (int) nul_char;
-}
-
-wchar_t * get_wstring(char *from) {
-	if(from == NULL) {
-		return NULL;
-	}
-	getwstring_count++;
-	wchar_t * wcbuf = ALLOC_WC(strlen(from) + 1);
-	mbstowcs(wcbuf, from, strlen(from)+1);
-	return wcbuf;
-}
-
-void
-append_string(register char *from, register String to, register int length)
-{
-	if (length == FIND_LENGTH) {
-		length = strlen(from);
-	}
-	if (to->buffer.start == NULL) {
-		expand_string(to, 32 + length);
-	}
-	if (to->buffer.end - to->text.p <= length) {
-		expand_string(to,
-			      (to->buffer.end - to->buffer.start) * 2 +
-			      length);
-	}
-	if (length > 0) {
-		(void) mbstowcs(to->text.p, from, length);
-		to->text.p += length;
-	}
-	*(to->text.p) = (int) nul_char;
-}
-
-/*
- *	expand_string(string, length)
- *
- *	Allocate more memory for strings that run out of space.
- *
- *	Parameters:
- *		string		The make style string we want to expand
- *		length		The new length we need
- *
- *	Global variables used:
- */
-static void
-expand_string(register String string, register int length)
-{
-	register wchar_t	*p;
-
-	if (string->buffer.start == NULL) {
-		/* For strings that have no memory allocated */
-		string->buffer.start =
-		  string->text.p =
-		    string->text.end =
-		      ALLOC_WC(length);
-		string->buffer.end = string->buffer.start + length;
-		string->text.p[0] = (int) nul_char;
-		string->free_after_use = true;
-		expandstring_count++;
-		return;
-	}
-	if (string->buffer.end - string->buffer.start >= length) {
-		/* If we really don't need more memory. */
-		return;
-	}
-	/*
-	 * Get more memory, copy the string and free the old buffer if
-	 * it is was malloc()'ed.
-	 */
-	expandstring_count++;
-	p = ALLOC_WC(length);
-	(void) wscpy(p, string->buffer.start);
-	string->text.p = p + (string->text.p - string->buffer.start);
-	string->text.end = p + (string->text.end - string->buffer.start);
-	string->buffer.end = p + length;
-	if (string->free_after_use) {
-		retmem(string->buffer.start);
-	}
-	string->buffer.start = p;
-	string->free_after_use = true;
-}
-
-/*
- *	append_char(from, to)
- *
- *	Append one char to a make string expanding it if nessecary
- *
- *	Parameters:
- *		from		Single character to append to string
- *		to		The destination (make style) string
- *
- *	Global variables used:
- */
-void
-append_char(wchar_t from, register String to)
-{
-	if (to->buffer.start == NULL) {
-		expand_string(to, 32);
-	}
-	if (to->buffer.end - to->text.p <= 2) {
-		expand_string(to, to->buffer.end - to->buffer.start + 32);
-	}
-	*(to->text.p)++ = from;
-	*(to->text.p) = (int) nul_char;
+	return (NULL);
 }
 
 /*
@@ -914,7 +652,7 @@ mbstowcs_with_check(wchar_t *pwcs, const char *s, size_t n)
 }
 
 
-
+#if 0
 Wstring::Wstring()
 {
 	INIT_STRING_FROM_STACK(string, string_buf);
@@ -929,7 +667,7 @@ Wstring::Wstring(struct _Name * name)
 Wstring::~Wstring()
 {
 	if(string.free_after_use) {
-		retmem(string.buffer.start);
+		free(string.buffer.start);
 	}
 }
 
@@ -937,7 +675,7 @@ void
 Wstring::init(struct _Name * name)
 {
 	if(string.free_after_use) {
-		retmem(string.buffer.start);
+		free(string.buffer.start);
 	}
 	INIT_STRING_FROM_STACK(string, string_buf);
 	append_string(name->string_mb, &string, name->hash.length);
@@ -1004,170 +742,4 @@ Wstring::append_to_str(struct _String * str, unsigned off, unsigned length)
 {
 	append_string(string.buffer.start + off, str, length);
 }
-
-Name
-Name_set::lookup(const char *key)
-{
-	for (entry *node = root; node != 0;) {
-		int res = strcmp(key, node->name->string_mb);
-		if (res < 0) {
-			node = node->left;
-		} else if (res > 0) {
-			node = node->right;
-		} else {
-			return node->name;
-		}
-	}
-	return 0;
-}
-
-Name
-Name_set::insert(const char *key, Boolean &found)
-{
-	Name	name = 0;
-
-	if (root != 0) {
-		for (entry *node = root; name == 0;) {
-			int res = strcmp(key, node->name->string_mb);
-			if (res < 0) {
-				if (node->left != 0) {
-					node = node->left;
-				} else {
-					found = false;
-					name = ALLOC(Name);
-
-					node->left = new entry(name, node);
-					rebalance(node);
-				}
-			} else if (res > 0) {
-				if (node->right != 0) {
-					node = node->right;
-				} else {
-					found = false;
-					name = ALLOC(Name);
-
-					node->right = new entry(name, node);
-					rebalance(node);
-				}
-			} else {
-				found = true;
-				name = node->name;
-			}
-		}
-	} else {
-		found = false;
-		name = ALLOC(Name);
-
-		root = new entry(name, 0);
-	}
-	return name;
-}
-
-void
-Name_set::insert(Name name) {
-	if (root != 0) {
-		for (entry *node = root;;) {
-			int res = strcmp(name->string_mb, node->name->string_mb);
-			if (res < 0) {
-				if (node->left != 0) {
-					node = node->left;
-				} else {
-					node->left = new entry(name, node);
-					rebalance(node);
-					break;
-				}
-			} else if (res > 0) {
-				if (node->right != 0) {
-					node = node->right;
-				} else {
-					node->right = new entry(name, node);
-					rebalance(node);
-					break;
-				}
-			} else {
-				// should be an error: inserting already existing name
-				break;
-			}
-		}
-	} else {
-		root = new entry(name, 0);
-	}
-}
-
-void
-Name_set::rebalance(Name_set::entry *node) {
-	for (; node != 0; node = node->parent) {
-		entry *right = node->right;
-		entry *left = node->left;
-
-		unsigned rdepth = (right != 0) ? right->depth : 0;
-		unsigned ldepth = (left != 0) ? left->depth : 0;
-
-		if (ldepth > rdepth + 1) {
-			if ((node->left = left->right) != 0) {
-				left->right->parent = node;
-			}
-			if ((left->parent = node->parent) != 0) {
-				if (node == node->parent->right) {
-					node->parent->right = left;
-				} else {
-					node->parent->left = left;
-				}
-			} else {
-				root = left;
-			}
-			left->right = node;
-			node->parent = left;
-
-			node->setup_depth();
-			node = left;
-		} else if (rdepth > ldepth + 1) {
-			if ((node->right = right->left) != 0) {
-				right->left->parent = node;
-			}
-			if ((right->parent = node->parent) != 0) {
-				if (node == node->parent->right) {
-					node->parent->right = right;
-				} else {
-					node->parent->left = right;
-				}
-			} else {
-				root = right;
-			}
-			right->left = node;
-			node->parent = right;
-
-			node->setup_depth();
-			node = right;
-		}
-		node->setup_depth();
-	}
-}
-
-Name_set::iterator
-Name_set::begin() const {
-	for (entry *node = root; node != 0; node = node->left) {
-		if (node->left == 0) {
-			return iterator(node);
-		}
-	}
-	return iterator();
-}
-
-Name_set::iterator&
-Name_set::iterator::operator++() {
-	if (node != 0) {
-		if (node->right != 0) {
-			node = node->right;
-			while (node->left != 0) {
-				node = node->left;
-			}
-		} else {
-			while ((node->parent != 0) && (node->parent->right == node)) {
-				node = node->parent;
-			}
-			node = node->parent;
-		}
-	}
-	return *this;
-}
+#endif

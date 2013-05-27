@@ -27,7 +27,7 @@
 
 #include <mksh/defs.h>
 
-extern int	get_char_semantics_entry(wchar_t ch);
-extern char	get_char_semantics_value(wchar_t ch);
+int get_char_semantics_entry(wchar_t);
+char get_char_semantics_value(wchar_t);
 
 #endif	/* _MKSH_I18N_H */

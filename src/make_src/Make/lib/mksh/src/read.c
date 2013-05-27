@@ -74,7 +74,7 @@ get_next_block_fn(register Source source)
 	if (source == NULL) {
 		return NULL;
 	}
-	if ((source->fd < 0) || 
+	if ((source->fd < 0) ||
 		((source->bytes_left_in_file <= 0) &&
 			(source->inp_buf_ptr >= source->inp_buf_end))) {
 		/* We can't read from the makefile, so pop the source block */
@@ -143,7 +143,7 @@ get_next_block_fn(register Source source)
 			break;
 		}
 	}
-		
+
 	if ((int) num_wc_chars == (size_t)-1) {
 		source->error_converting = true;
 		return source;
@@ -170,5 +170,3 @@ get_next_block_fn(register Source source)
 	}
 	return source;
 }
-
-

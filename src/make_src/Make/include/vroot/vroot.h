@@ -27,6 +27,8 @@
 #define _VROOT_H_
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <nl_types.h>
 
 #define VROOT_DEFAULT ((pathpt)-1)

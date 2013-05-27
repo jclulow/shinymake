@@ -49,10 +49,81 @@ static void	expand_value_with_daemon(Name name, register Property macro, registe
 static void	expand_value_with_daemon(Name, register Property macro, register String destination, Boolean cmd);
 #endif
 
-static void	init_arch_macros(void);
-static void	init_mach_macros(void);
-static Boolean	init_arch_done = false;
-static Boolean	init_mach_done = false;
+
+static boolean_t init_arch_done = B_FALSE;
+static boolean_t init_mach_done = B_FALSE;
+
+static void init_arch_macros(void);
+static void init_mach_macros(void);
+
+/*
+ * Check if this is a particular magic macro, but don't trigger the
+ * initialisation of said macro while doing so.
+ */
+boolean_t
+is_magic_macro_name(magic_macro_id_t id, name_t *n)
+{
+	name_t *xx;
+
+	if (id == MMI_UNKNOWN || id >= _MMI_MAX_ID) {
+		fprintf(stderr, "PROGRAMMING ERROR\n");
+		/*
+		 * XXX
+		 */
+		abort();
+	}
+
+	xx = magic_macros[id - 1];
+	if (xx != NULL && xx == n)
+		return (B_TRUE);
+
+	return (B_FALSE);
+}
+
+name_t *
+get_magic_macro(magic_macro_id_t id)
+{
+	if (id == MMI_UNKNOWN || id >= _MMI_MAX_ID) {
+		fprintf(stderr, "PROGRAMMING ERROR\n");
+		/*
+		 * XXX
+		 */
+		abort();
+	}
+
+	/*
+	 * Ensure we have done the appropriate initialisation:
+	 */
+	switch (id) {
+	case MMI_HOST_ARCH:
+	case MMI_TARGET_ARCH:
+		if (init_arch_done != B_TRUE)
+			init_arch_macros();
+		init_arch_done = B_TRUE;
+		break;
+	case MMI_HOST_MACH:
+	case MMI_TARGET_MACH:
+		if (init_mach_done != B_TRUE)
+			init_mach_macros();
+		init_mach_done = B_TRUE;
+		break;
+	case MMI_SHELL:
+		if (magic_macros[id - 1] == NULL) {
+			/*
+			 * XXX
+			 */
+			fprintf(stderr, "SHELL UNSET AT THIS STAGE\n");
+			abort();
+		}
+	default:
+		break;
+	}
+
+	/*
+	 * Now, return the requisite thing:
+	 */
+	return (magic_macros[id - 1]);
+}
 
 
 long env_alloc_num = 0;
@@ -71,35 +142,28 @@ long env_alloc_bytes = 0;
  *
  *	Global variables used:
  */
-Name
-getvar(register Name name)
+name_t *
+getvar(name_t *name)
 {
-	String_rec		destination;
-	wchar_t			buffer[STRING_BUFFER_LENGTH];
-	register Name		result;
+	string_t dest;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+	name_t *result;
+	property_t *prop;
+	macro_t *macro;
 
-	if ((name == host_arch) || (name == target_arch)) {
-		if (!init_arch_done) {
-			init_arch_done = true;
-			init_arch_macros();
-		}
-	}
-	if ((name == host_mach) || (name == target_mach)) {
-		if (!init_mach_done) {
-			init_mach_done = true;
-			init_mach_macros();
-		}
-	}
+	INIT_STRING_FROM_STACK(dest, buf);
 
-	INIT_STRING_FROM_STACK(destination, buffer);
-	expand_value(maybe_append_prop(name, macro_prop)->body.macro.value,
-		     &destination,
-		     false);
-	result = GETNAME(destination.buffer.start, FIND_LENGTH);
-	if (destination.free_after_use) {
-		retmem(destination.buffer.start);
-	}
-	return result;
+	prop = maybe_append_prop(name, macro_prop);
+	if (prop->p_type != PT_MACRO)
+		abort();
+	macro = (macro_t *)prop->p_body;
+	expand_value(macro->m_value, &destination, B_FALSE);
+
+	result = GETNAME(dest.str_buf_start, FIND_LENGTH);
+	if (dest.str_free_after_use)
+		free(dest.str_buf_start);
+
+	return (result);
 }
 
 /*
@@ -237,7 +301,7 @@ expand_value(Name value, register String destination, Boolean cmd)
  *	and get the value. The value is then expanded.
  *	destination is a String that is filled in with the expanded macro.
  *	It may be passed in referencing a buffer to expand the macro into.
- * 	Note that most expansions are done on demand, e.g. right 
+ * 	Note that most expansions are done on demand, e.g. right
  *	before the command is executed and not while the file is
  * 	being parsed.
  *
@@ -856,12 +920,12 @@ exit:
 }
 
 static void
-add_macro_to_global_list(Name macro_to_add)
+add_macro_to_global_list(name_t *macro_to_add)
 {
-	Macro_list	new_macro;
-	Macro_list	macro_on_list;
+	macro_list_t	*new_macro;
+	macro_list_t	*macro_on_list;
 	char		*name_on_list = (char*)NULL;
-	char		*name_to_add = macro_to_add->string_mb;
+	char		*name_to_add = macro_to_add->n_key;
 	char		*value_on_list = (char*)NULL;
 	char		*value_to_add = (char*)NULL;
 
@@ -871,26 +935,28 @@ add_macro_to_global_list(Name macro_to_add)
 		value_to_add = "";
 	}
 
-	/* 
+	/*
 	 * Check if this macro is already on list, if so, do nothing
 	 */
 	for (macro_on_list = cond_macro_list;
 	     macro_on_list != NULL;
-	     macro_on_list = macro_on_list->next) {
+	     macro_on_list = macro_on_list->ml_next) {
 
-		name_on_list = macro_on_list->macro_name;
-		value_on_list = macro_on_list->value;
+		name_on_list = macro_on_list->ml_macro_name;
+		value_on_list = macro_on_list->ml_value;
 
-		if (IS_EQUAL(name_on_list, name_to_add)) {
-			if (IS_EQUAL(value_on_list, value_to_add)) {
-				return;
-			}
+		if (strcmp(name_on_list, name_to_add) == 0 &&
+		    strcmp(value_on_list, value_to_add) == 0) {
+			return;
 		}
 	}
-	new_macro = (Macro_list) malloc(sizeof(Macro_list_rec));
-	new_macro->macro_name = strdup(name_to_add);
-	new_macro->value = strdup(value_to_add);
-	new_macro->next = cond_macro_list;
+	/*
+	 * Otherwise, put it at the head of the list:
+	 */
+	new_macro = malloc(sizeof (*new_macro));
+	new_macro->ml_macro_name = xstrdup(name_to_add);
+	new_macro->ml_value = xstrdup(value_to_add);
+	new_macro->ml_next = cond_macro_list;
 	cond_macro_list = new_macro;
 }
 
@@ -899,7 +965,7 @@ add_macro_to_global_list(Name macro_to_add)
  *
  *	Set the magic macros TARGET_ARCH, HOST_ARCH,
  *
- *	Parameters: 
+ *	Parameters:
  *
  *	Global variables used:
  * 	                        host_arch   Property for magic macro HOST_ARCH
@@ -912,54 +978,50 @@ add_macro_to_global_list(Name macro_to_add)
 static void
 init_arch_macros(void)
 {
-	String_rec	result_string;
+	string_t	result_string;
 	wchar_t		wc_buf[STRING_BUFFER_LENGTH];
-	char		mb_buf[STRING_BUFFER_LENGTH];
 	FILE		*pipe;
-	Name		value;
-	int		set_host, set_target;
-#ifdef NSE
-	Property	macro;
-#endif
-#if defined(linux)
-	const char	*mach_command = NOCATGETS("/bin/uname -p");
-#else
-	const char	*mach_command = NOCATGETS("/bin/mach");
-#endif
 
-	set_host = (get_prop(host_arch->prop, macro_prop) == NULL);
-	set_target = (get_prop(target_arch->prop, macro_prop) == NULL);
+	name_t		*value;
+	const char *mach_command = NOCATGETS("/bin/mach");
+	string_t str;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+	char fgetsbuf[100];
+	boolean_t set_host, set_target;
 
-	if (set_host || set_target) {
-		INIT_STRING_FROM_STACK(result_string, wc_buf);
-		append_char((int) hyphen_char, &result_string);
+	/*
+	 * Only set HOST_ARCH and TARGET_ARCH if we have not yet set them some
+	 * other way:
+	 */
+	set_host = magic_macros[MMI_HOST_ARCH - 1] == NULL ? B_TRUE : B_FALSE;
+	set_target = magic_macros[MMI_TARGET_ARCH - 1] == NULL ? B_TRUE :
+	    B_FALSE;
 
-		if ((pipe = popen(mach_command, "r")) == NULL) {
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 185, "Execute of %s failed"), mach_command);
-		}
-		while (fgets(mb_buf, sizeof(mb_buf), pipe) != NULL) {
-			MBSTOWCS(wcs_buffer, mb_buf);
-			append_string(wcs_buffer, &result_string, wslen(wcs_buffer));
-		}
-		if (pclose(pipe) != 0) {
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 186, "Execute of %s failed"), mach_command);
-		}
+	if (set_host == B_FALSE && set_target == B_FALSE)
+		return;
 
-		value = GETNAME(result_string.buffer.start, wslen(result_string.buffer.start));
+	INIT_STRING_FROM_STACK(str, buf);
+	append_char(hyphen_char, &str);
 
-#ifdef NSE
-	        macro = setvar_daemon(host_arch, value, false, no_daemon, true, 0);
-	        macro->body.macro.imported= true;
-	        macro = setvar_daemon(target_arch, value, false, no_daemon, true, 0);
-	        macro->body.macro.imported= true;
-#else
-		if (set_host) {
-			(void) setvar_daemon(host_arch, value, false, no_daemon, true, 0);
-		}
-		if (set_target) {
-			(void) setvar_daemon(target_arch, value, false, no_daemon, true, 0);
-		}
-#endif
+	if ((pipe = popen(mach_command, "r")) == NULL) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 185,
+		    "Execute of %s failed"), mach_command);
+	}
+	while (fgets(fgetsbuf, sizeof (fgetsbuf), pipe) != NULL)
+		append_string(fgetsbuf, &str, FIND_LENGTH);
+	if (pclose(pipe) != 0) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 186, "Execute of %s "
+		    "failed"), mach_command);
+	}
+
+	value = GETNAME(result_string.str_buf_start, FIND_LENGTH);
+	if (set_host) {
+		(void) setvar_daemon(host_arch, value, B_FALSE, no_daemon,
+		    B_TRUE, 0);
+	}
+	if (set_target) {
+		(void) setvar_daemon(target_arch, value, B_FALSE, no_daemon,
+		    B_TRUE, 0);
 	}
 }
 
@@ -968,7 +1030,7 @@ init_arch_macros(void)
  *
  *	Set the magic macros TARGET_MACH, HOST_MACH,
  *
- *	Parameters: 
+ *	Parameters:
  *
  *	Global variables used:
  * 	                        host_mach   Property for magic macro HOST_MACH
@@ -1124,152 +1186,186 @@ int	sunpro_dependencies_buf_size = 0;
  *		vpath_name	The Name "VPATH", compared against
  *		envvar		A list of environment vars with $ in value
  */
-Property
-setvar_daemon(register Name name, register Name value, Boolean append, Daemon daemon, Boolean strip_trailing_spaces, short debug_level)
+property_t *
+setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
+    boolean strip_trailing_spaces, short debug_level)
 {
-	register Property	macro = maybe_append_prop(name, macro_prop);
-	register Property	macro_apx = get_prop(name->prop, macro_append_prop);
-	int			length = 0;
-	String_rec		destination;
-	wchar_t			buffer[STRING_BUFFER_LENGTH];
-	register Chain		chain;
-	Name			val;
-	wchar_t			*val_string = (wchar_t*)NULL;
-	Wstring			wcb;
+	property_t *propm, *propma;
+	macro_t *macro;
+	macro_appendix_t *macapx = NULL;
+	name_t *val;
+	string_t dest;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+	chain_t *chain = NULL;
+	name_t *value = NULL;
 
-#ifdef NSE
-        macro->body.macro.imported = false;
-#endif
-
-	if ((makefile_type != reading_nothing) &&
-	    macro->body.macro.read_only) {
-		return macro;
+	/*
+	 * Determine whether our value argument is a name_t or a chain_t.
+	 * XXX This interface is fucking abysmal.
+	 */
+	switch (daemon) {
+	case DN_NO_DAEMON:
+		value = (name_t *)valarg;
+		break;
+	case DN_CHAIN_DAEMON:
+		chain = (chain_t *)valarg;
+		break;
+	default:
+		fprintf(stderr, "PROGRAMMING ERROR\n");
+		abort();
 	}
-	/* Strip spaces from the end of the value */
-	if (daemon == no_daemon) {
-		if(value != NULL) {
-			wcb.init(value);
-			length = wcb.length();
-			val_string = wcb.get_string();
-		}
-		if ((length > 0) && iswspace(val_string[length-1])) {
-			INIT_STRING_FROM_STACK(destination, buffer);
-			buffer[0] = 0;
-			append_string(val_string, &destination, length);
-			if (strip_trailing_spaces) {
-				while ((length > 0) &&
-				       iswspace(destination.buffer.start[length-1])) {
-					destination.buffer.start[--length] = 0;
-				}
+
+	/*
+	 * Fetch the macro_t property for this name:
+	 */
+	propm = maybe_append_prop(name, PT_MACRO);
+	macro = (macro_t *)propm->p_body;
+
+	/*
+	 * Fetch the macro_appendix_t property if it exists:
+	 */
+	propma = get_prop(name->n_prop, PT_MACRO_APPEND);
+	if (propma != NULL)
+		macapx = (macro_appendix_t *)propma->p_body;
+
+	if ((makefile_type != MFT_READING_NOTHING) &&
+	    macro->m_read_only == B_TRUE) {
+		return (propm);
+	}
+
+	if (value != NULL) {
+		/*
+		 * Strip spaces from the end of the value.
+		 */
+		int length = wcslen(value->n_key);
+		if (length > 0 && iswspace(value->n_key[length - 1])) {
+			wchar_t *tmp = xwcsdup(value->n_key);
+			while (length > 0) {
+				if (!iswspace(tmp[length - 1]))
+					break;
+				tmp[length - 1] = (wchar_t)0;
+				length--;
 			}
-			value = GETNAME(destination.buffer.start, FIND_LENGTH);
+			value = GETNAME(tmp, FIND_LENGTH);
+			free(tmp);
 		}
 	}
-		
-	if(macro_apx != NULL) {
-		val = macro_apx->body.macro_appendix.value;
+
+	if (macapx != NULL) {
+		val = macapx->map_value;
 	} else {
-		val = macro->body.macro.value;
+		val = macro->m_value;
 	}
 
-	if (append) {
+	if (append == B_TRUE) {
 		/*
 		 * If we are appending, we just tack the new value after
 		 * the old one with a space in between.
 		 */
-		INIT_STRING_FROM_STACK(destination, buffer);
-		buffer[0] = 0;
-		if ((macro != NULL) && (val != NULL)) {
-			APPEND_NAME(val,
-				      &destination,
-				      (int) val->hash.length);
-			if (value != NULL) {
-				wcb.init(value);
-				if(wcb.length() > 0) {
-					MBTOWC(wcs_buffer, " ");
-					append_char(wcs_buffer[0], &destination);
-				}
-			}
-		}
+		INIT_STRING_FROM_STACK(dest, buf);
+		buf[0] = WCNUL;
+
+		if ((macro != NULL) && (val != NULL))
+			append_string_name(val, &dest);
+
 		if (value != NULL) {
-			APPEND_NAME(value,
-				      &destination,
-				      (int) value->hash.length);
+			if (buf[0] != WCNUL && value->n_key[0] != WCNUL) {
+				/*
+				 * We need a separating space:
+				 */
+				append_string(" ", &dest, FIND_LENGTH);
+			}
+			/*
+			 * Append our value:
+			 */
+			append_string_name(value, &dest);
 		}
-		value = GETNAME(destination.buffer.start, FIND_LENGTH);
-		wcb.init(value);
-		if (destination.free_after_use) {
-			retmem(destination.buffer.start);
-		}
+		value = GETNAME(dest.str_buf_start, FIND_LENGTH);
+		if (dest.str_free_after_use == B_TRUE)
+			free(dest.str_buf_start);
 	}
 
-	/* Debugging trace */
+	/*
+	 * Debugging Trace:
+	 */
 	if (debug_level > 1) {
-		if (value != NULL) {
-			switch (daemon) {
-			case chain_daemon:
-				(void) printf("%s =", name->string_mb);
-				for (chain = (Chain) value;
-				     chain != NULL;
-				     chain = chain->next) {
-					(void) printf(" %s", chain->name->string_mb);
-				}
-				(void) printf("\n");
-				break;
-			case no_daemon:
-				(void) printf("%s= %s\n",
-					      name->string_mb,
-					      value->string_mb);
-				break;
-			}
-		} else {
-			(void) printf("%s =\n", name->string_mb);
+		chain_t *tc;
+
+		(void) printf("%ls =", name->n_key);
+		switch (daemon) {
+		case DN_CHAIN_DAEMON:
+			for (tc = chain; tc != NULL; tc = tc->ch_next)
+				(void) printf(" %ls", tc->ch_name->n_key);
+			break;
+		case DN_NO_DAEMON:
+			if (value != NULL)
+				(void) printf(" %ls", value->n_key);
+			break;
 		}
+		(void) printf("\n");
 	}
-	/* Set the new values in the macro property block */
-/**/
-	if(macro_apx != NULL) {
-		macro_apx->body.macro_appendix.value = value;
-		INIT_STRING_FROM_STACK(destination, buffer);
-		buffer[0] = 0;
+
+	/*
+	 * Set the new values in the macro property block.
+	 */
+	if (macapx != NULL) {
+		macapx->ma_value = value;
+		INIT_STRING_FROM_STACK(dest, buf);
+		buf[0] = WCNUL;
 		if (value != NULL) {
-			APPEND_NAME(value,
-				      &destination,
-				      (int) value->hash.length);
-			if (macro_apx->body.macro_appendix.value_to_append != NULL) {
-				MBTOWC(wcs_buffer, " ");
-				append_char(wcs_buffer[0], &destination);
+			append_string_name(value, &dest);
+			if (macapx->ma_value_to_append != NULL)
+		}
+		if (macapx->ma_value_to_append != NULL) {
+			if (buf[0] != WCNUL &&
+			    macapx->ma_value_to_append->n_key[0] != WCNUL) {
+				append_string(" ", &dest, FIND_LENGTH);
 			}
+			append_string_name(macapx->ma_value_to_append, &dest);
 		}
-		if (macro_apx->body.macro_appendix.value_to_append != NULL) {
-			APPEND_NAME(macro_apx->body.macro_appendix.value_to_append,
-				      &destination,
-				      (int) macro_apx->body.macro_appendix.value_to_append->hash.length);
-		}
-		value = GETNAME(destination.buffer.start, FIND_LENGTH);
-		if (destination.free_after_use) {
-			retmem(destination.buffer.start);
-		}
+		value = GETNAME(dest.str_buf_start, FIND_LENGTH);
+		if (dest.str_free_after_use == B_TRUE)
+			free(dest.str_buf_start);
 	}
-/**/
-	macro->body.macro.value = value;
-	macro->body.macro.daemon = daemon;
+
+	macro->m_daemon = daemon;
+	if (daemon == DN_CHAIN_DAEMON) {
+		macro->m_chain = chain;
+		macro->m_value = NULL;
+	} else {
+		macro->m_value = value;
+		macro->m_chain = NULL;
+	}
+
 	/*
 	 * If the user changes the VIRTUAL_ROOT, we need to flush
 	 * the vroot package cache.
 	 */
-	if (name == path_name) {
+	if (is_magic_macro_name(MMI_PATH, name) == B_TRUE) {
 		flush_path_cache();
 	}
-	if (name == virtual_root) {
+	if (is_magic_macro_name(MMI_VIRTUAL_ROOT, name) == B_TRUE) {
 		flush_vroot_cache();
 	}
+
+	/*
+	 * For environment variables, we also set the environment value
+	 * each time.
+	 */
+	if (macro->m_exported == B_TRUE) {
+	}
+
+	/* XXX JMC THIS IS A MESS */
+
+#if 0
 	/* If this sets the VPATH we remember that */
 	if ((name == vpath_name) &&
 	    (value != NULL) &&
 	    (value->hash.length > 0)) {
 		vpath_defined = true;
 	}
+#endif
+
 	/*
 	 * For environment variables we also set the
 	 * environment value each time.
@@ -1277,11 +1373,7 @@ setvar_daemon(register Name name, register Name value, Boolean append, Daemon da
 	if (macro->body.macro.exported) {
 		static char	*env;
 
-#ifdef DISTRIBUTED
-		if (!reading_environment && (value != NULL)) {
-#else
 		if (!reading_environment && (value != NULL) && value->dollar) {
-#endif
 			Envvar	p;
 
 			for (p = envvar; p != NULL; p = p->next) {
@@ -1299,12 +1391,7 @@ setvar_daemon(register Name name, register Name value, Boolean append, Daemon da
 			p->already_put = false;
 			envvar = p;
 found_it:;
-#ifdef DISTRIBUTED
-		}
-		if (reading_environment || (value == NULL) || !value->dollar) {
-#else
 		} else {
-#endif
 			length = 2 + strlen(name->string_mb);
 			if (value != NULL) {
 				length += strlen(value->string_mb);
@@ -1376,22 +1463,11 @@ found_it:;
 			new_value = ALLOC_WC(length);
 			new_value_allocated = true;
 			WCSTOMBS(mbs_buffer, old_vr);
-#if !defined(linux)
 			(void) wsprintf(new_value,
 				        NOCATGETS("/usr/arch/%s/%s:%s"),
 				        ha->string_mb + 1,
 				        ta->string_mb + 1,
 				        mbs_buffer);
-#else
-			char * mbs_new_value = (char *)getmem(length);
-			(void) sprintf(mbs_new_value,
-				        NOCATGETS("/usr/arch/%s/%s:%s"),
-				        ha->string_mb + 1,
-				        ta->string_mb + 1,
-				        mbs_buffer);
-			MBSTOWCS(new_value, mbs_new_value);
-			retmem_mb(mbs_new_value);
-#endif
 		}
 		if (new_value[0] != 0) {
 			(void) setvar_daemon(virtual_root,

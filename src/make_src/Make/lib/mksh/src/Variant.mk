@@ -31,14 +31,15 @@ include $(TOP)/rules/dmake.mk
 PKG_TOP =	$(TOP)/Make
 CPPFLAGS +=	-I$(PKG_TOP)/include
 
-CCSRCS =	\
-		dosys.cc \
-		globals.cc \
-		i18n.cc \
-		macro.cc \
-		misc.cc \
-		mksh.cc \
-		read.cc
+CSRCS =	\
+		newcode.c \
+		dosys.c \
+		globals.c \
+		i18n.c \
+		macro.c \
+		misc.c \
+		mksh.c \
+		read.c
 
 HDRS_DIR =	$(PKG_TOP)/include/mksh
 HDRS_LIST =	$(HDRS_DIR)/defs.h \

@@ -33,21 +33,12 @@
  * Included files
  */
 #include <sys/wait.h>			/* WIFEXITED(status) */
-#include <avo/avo_alloca.h>		/* alloca() */
+#include <alloca.h>
 
-#if defined(TEAMWARE_MAKE_CMN) || defined(MAKETOOL) /* tolik */
-/* #	include <avo/strings.h> */	/* AVO_STRDUP() */
 #include <strings.h>
-#define	AVO_STRDUP	strdup
-#if defined(DISTRIBUTED)
-#	include <dm/Avo_CmdOutput.h>
-#	include <rw/xdrstrea.h>
-#endif
-#endif
-
-#include <stdio.h>		/* errno */
-#include <errno.h>		/* errno */
-#include <fcntl.h>		/* open() */
+#include <stdio.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <mksh/dosys.h>
 #include <mksh/macro.h>		/* getvar() */
 #include <mksh/misc.h>		/* getmem(), fatal_mksh(), errmsg() */
@@ -55,31 +46,13 @@
 #include <sys/signal.h>		/* SIG_DFL */
 #include <sys/stat.h>		/* open() */
 #include <sys/wait.h>		/* wait() */
-#include <ulimit.h>		/* ulimit() */
-#include <unistd.h>		/* close(), dup2() */
-
-#if defined (HP_UX) || defined (linux)
-#	include <sys/param.h>
-#	include <wctype.h>
-#	include <wchar.h>
-#endif
-
-#if defined (linux)
-#	define wslen(x) wcslen(x)
-#	define wscpy(x,y) wcscpy(x,y)
-#endif
+#include <ulimit.h>
+#include <unistd.h>
 
 /*
  * Defined macros
  */
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-#define SEND_MTOOL_MSG(cmds) \
-	if (send_mtool_msgs) { \
-		cmds \
-	}
-#else
 #define SEND_MTOOL_MSG(cmds)
-#endif
 
 /*
  * typedefs & structs
@@ -92,29 +65,19 @@
 /*
  * File table of contents
  */
-static Boolean	exec_vp(register char *name, register char **argv, char **envp, register Boolean ignore_error, pathpt vroot_path);
+static op_result_t exec_vp(char *name, char **argv, char **envp,
+    boolean_t ignore_error, pathpt vroot_path);
 
 /*
  * Workaround for NFS bug. Sometimes, when running 'open' on a remote
  * dmake server, it fails with "Stale NFS file handle" error.
  * The second attempt seems to work.
+ * XXX THIS IS WONDERFUL
  */
 int
 my_open(const char *path, int oflag, mode_t mode) {
 	int res = open(path, oflag, mode);
-#ifdef linux
-// Workaround for NFS problem: even when all directories in 'path'
-// exist, 'open' (file creation) fails with ENOENT.
-	int nattempt = 0;
-	while (res < 0 && (errno == ESTALE || errno == EAGAIN || errno == ENOENT)) {
-		nattempt++;
-		if(nattempt > 30) {
-			break;
-		}
-		sleep(1);
-#else
 	if (res < 0 && (errno == ESTALE || errno == EAGAIN)) {
-#endif
 		/* Stale NFS file handle. Try again */
 		res = open(path, oflag, mode);
 	}
@@ -129,34 +92,26 @@ my_open(const char *path, int oflag, mode_t mode) {
  */
 void
 redirect_io(char *stdout_file, char *stderr_file)
-{        
+{
 	long		descriptor_limit;
 	int		i;
 
-#if defined (HP_UX) || defined (linux)
-        /*
-         *  HP-UX does not support the UL_GDESLIM command for ulimit().
-	 *  NOFILE == max num open files per process (from <sys/param.h>)
-         */
-	descriptor_limit = NOFILE;
-#else
 	if ((descriptor_limit = ulimit(UL_GDESLIM)) < 0) {
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 89, "ulimit() failed: %s"), errmsg(errno));
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 89,
+		    "ulimit() failed: %s"), errmsg(errno));
 	}
-#endif
 	for (i = 3; i < descriptor_limit; i++) {
 		(void) close(i);
 	}
-	if ((i = my_open(stdout_file,
-	         O_WRONLY | O_CREAT | O_TRUNC | O_DSYNC,
-	         S_IREAD | S_IWRITE)) < 0) {
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 90, "Couldn't open standard out temp file `%s': %s"),
-		      stdout_file,
-		      errmsg(errno));
+	if ((i = my_open(stdout_file, O_WRONLY | O_CREAT | O_TRUNC | O_DSYNC,
+	    S_IREAD | S_IWRITE)) < 0) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 90,
+		    "Couldn't open standard out temp file `%s': %s"),
+		    stdout_file, errmsg(errno));
 	} else {
 		if (dup2(i, 1) == -1) {
-			fatal_mksh(NOCATGETS("*** Error: dup2(3, 1) failed: %s"),
-				errmsg(errno));
+			fatal_mksh(NOCATGETS("*** Error: dup2(3, 1) "
+			    "failed: %s"), errmsg(errno));
 		}
 		close(i);
 	}
@@ -200,38 +155,50 @@ redirect_io(char *stdout_file, char *stderr_file)
  *		do_not_exec_rule Is -n on?
  *		working_on_targets We started processing real targets
  */
-Doname
-dosys_mksh(register Name command, register Boolean ignore_error, register Boolean call_make, Boolean silent_error, Boolean always_exec, Name target, Boolean redirect_out_err, char *stdout_file, char *stderr_file, pathpt vroot_path, int nice_prio)
+doname_t
+dosys_mksh(name_t *command, boolean_t ignore_error, boolean_t call_make,
+    boolean_t silent_error, boolean_t always_exec, name_t *target,
+    boolean_t redirect_out_err, char *stdout_file, char *stderr_file,
+    pathpt vroot_path, int nice_prio)
 {
-	register int		length = command->hash.length;
-	register wchar_t	*p;
-	register wchar_t	*q;
-	register wchar_t	*cmd_string;
-	struct stat		before;
-	Doname			result;
-	Boolean			working_on_targets_mksh = true;
-	Wstring wcb(command);
-	p = wcb.get_string();
-	cmd_string = p;
+#if 0
+	int		length = command->hash.length;
+#endif
+	pid_t waitfor;
+	wchar_t	*cmd_string = command->n_key;
+	wchar_t	*q;
+	/*
+	struct stat before;
+	*/
+	doname_t result = DON_DONT_KNOW;
+	boolean_t working_on_targets_mksh = B_TRUE;
 
-	/* Strip spaces from head of command string */
-	while (iswspace(*p)) {
-		p++, length--;
-	}
-	if (*p == (int) nul_char) {
-		return build_failed;
-	}
-	/* If we are faking it we just return */
-	if (do_not_exec_rule &&
-	    working_on_targets_mksh &&
-	    !call_make &&
-	    !always_exec) {
-		return build_ok;
+	/*
+	 * Strip spaces from head of command string.
+	 */
+	while (iswspace(*cmd_string))
+		cmd_string++;
+	/*
+	 * Fail if the string is now empty:
+	 */
+	if (*cmd_string == (wchar_t)0)
+		return (DON_FAILED);
+
+	/*
+	 * If we are faking it we just return.
+	 */
+	if (do_not_exec_rule == B_TRUE &&
+	    working_on_targets_mksh == B_TRUE &&
+	    call_make == B_FALSE &&
+	    always_exec == B_FALSE) {
+		return (DON_OK);
 	}
 
-	/* Copy string to make it OK to write it. */
-	q = ALLOC_WC(length + 1);
-	(void) wscpy(q, p);
+	/*
+	 * Copy string to make it OK to write it.
+	 */
+	q = xwcsdup(cmd_string);
+
 	/* Write the state file iff this command uses make. */
 /* XXX - currently does not support recursive make's, $(MAKE)'s
 	if (call_make && command_changed) {
@@ -239,36 +206,27 @@ dosys_mksh(register Name command, register Boolean ignore_error, register Boolea
 	}
 	(void) stat(make_state->string_mb, &before);
  */
+
 	/*
 	 * Run command directly if it contains no shell meta chars,
 	 * else run it using the shell.
+	 *
+	 * XXX - command->meta *may* not be set correctly.
 	 */
-	/* XXX - command->meta *may* not be set correctly */
-	if (await(ignore_error,
-		  silent_error,
-		  target,
-		  cmd_string,
-                  command->meta ?
-	            doshell(q, ignore_error, redirect_out_err, stdout_file, stderr_file, nice_prio) :
-	            doexec(q, ignore_error, redirect_out_err, stdout_file, stderr_file, vroot_path, nice_prio),
-	          false,
-	          NULL,
-	          -1)) {
-
-#ifdef PRINT_EXIT_STATUS
-		warning_mksh(NOCATGETS("I'm in dosys_mksh(), and await() returned result of build_ok."));
-#endif
-
-		result = build_ok;
+	if (command->n_meta == B_TRUE) {
+		waitfor = doshell(q, ignore_error, redirect_out_err,
+		    stdout_file, stderr_file, nice_prio);
 	} else {
-
-#ifdef PRINT_EXIT_STATUS
-		warning_mksh(NOCATGETS("I'm in dosys_mksh(), and await() returned result of build_failed."));
-#endif
-
-		result = build_failed;
+		waitfor = doexec(q, ignore_error, redirect_out_err,
+		    stdout_file, stderr_file, vroot_path, nice_prio);
 	}
-	retmem(q);
+	if (await(ignore_error, silent_error, target, cmd_string, waitfor,
+	    B_FALSE, NULL, -1)) {
+		result = DON_OK;
+	} else {
+		result = DON_FAILED;
+	}
+	free(q);
 
 /* XXX - currently does not support recursive make's, $(MAKE)'s
 	if ((report_dependencies_level == 0) &&
@@ -292,7 +250,7 @@ dosys_mksh(register Name command, register Boolean ignore_error, register Boolea
 		trace_reader = false;
 	}
  */
-	return result;
+	return (result);
 }
 
 /*
@@ -313,21 +271,31 @@ dosys_mksh(register Name command, register Boolean ignore_error, register Boolea
  *		shell_name	The Name "SHELL", used to get the path to shell
  */
 int
-doshell(wchar_t *command, register Boolean ignore_error, Boolean redirect_out_err, char *stdout_file, char *stderr_file, int nice_prio)
+doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err, char *stdout_file, char *stderr_file, int nice_prio)
 {
 	char			*argv[6];
 	int			argv_index = 0;
 	int			cmd_argv_index;
 	int			length;
 	char			nice_prio_buf[MAXPATHLEN];
-	register Name		shell = getvar(shell_name);
-	register char		*shellname;
+	char		*shellname;
 	char			*tmp_mbs_buffer;
 
+	name_t *shell;
+	char *snbuf[MAXPATHLEN], *shellname;
 
-	if (IS_EQUAL(shell->string_mb, "")) {
-		shell = shell_name;
+	/*
+	 * Attempt to expand the SHELL macro:
+	 */
+	shell = getvar(get_magic_macro(MMI_SHELL));
+	if (wcslen(shell->n_key) == 0) {
+		/*
+		 * The expansion resulted in the empty string.  Use the value
+		 * without expansion:
+		 */
+		shell = get_magic_macro(MMI_SHELL);
 	}
+
 	if ((shellname = strrchr(shell->string_mb, (int) slash_char)) == NULL) {
 		shellname = shell->string_mb;
 	} else {
@@ -345,15 +313,8 @@ doshell(wchar_t *command, register Boolean ignore_error, Boolean redirect_out_er
 		argv[argv_index++] = strdup(nice_prio_buf);
 	}
 	argv[argv_index++] = shellname;
-#if defined(linux)
-	if(0 == strcmp(shell->string_mb, (char*)NOCATGETS("/bin/sh"))) {
-		argv[argv_index++] = (char*)(ignore_error ? NOCATGETS("-c") : NOCATGETS("-ce"));
-	} else {
-		argv[argv_index++] = (char*)NOCATGETS("-c");
-	}
-#else
-	argv[argv_index++] = (char*)(ignore_error ? NOCATGETS("-c") : NOCATGETS("-ce"));
-#endif
+	argv[argv_index++] = (char*)(ignore_error ? NOCATGETS("-c") :
+	    NOCATGETS("-ce"));
 	if ((length = wslen(command)) >= MAXPATHLEN) {
 		tmp_mbs_buffer = getmem((length * MB_LEN_MAX) + 1);
                 (void) wcstombs(tmp_mbs_buffer, command, (length * MB_LEN_MAX) + 1);
@@ -424,11 +385,12 @@ doshell(wchar_t *command, register Boolean ignore_error, Boolean redirect_out_er
  *		shell_name	The Name "SHELL", used to get the path to shell
  *		vroot_path	The path used by the vroot package
  */
-static Boolean
-exec_vp(register char *name, register char **argv, char **envp, register Boolean ignore_error, pathpt vroot_path)
+static op_result_t
+exec_vp(char *name, char **argv, char **envp, boolean_t ignore_error,
+    pathpt vroot_path)
 {
-	register Name		shell = getvar(shell_name);
-	register char		*shellname;
+	Name		shell = getvar(shell_name);
+	char		*shellname;
 	char			*shargv[4];
 	Name			tmp_shell;
 
@@ -453,7 +415,8 @@ exec_vp(register char *name, register char **argv, char **envp, register Boolean
 				shellname++;
 			}
 			shargv[0] = shellname;
-			shargv[1] = (char*)(ignore_error ? NOCATGETS("-c") : NOCATGETS("-ce"));
+			shargv[1] = (char*)(ignore_error == B_TRUE ?
+			    NOCATGETS("-c") : NOCATGETS("-ce"));
 			shargv[2] = argv[0];
 			shargv[3] = NULL;
 			tmp_shell = getvar(shell_name);
@@ -465,7 +428,7 @@ exec_vp(register char *name, register char **argv, char **envp, register Boolean
 					    envp,
 					    vroot_path,
 					    VROOT_DEFAULT);
-			return failed;
+			return (OPR_FAILURE);
 		case ETXTBSY:
 			/*
 			 * The program is busy (debugged?).
@@ -475,10 +438,10 @@ exec_vp(register char *name, register char **argv, char **envp, register Boolean
 		case EAGAIN:
 			break;
 		default:
-			return failed;
+			return (OPR_FAILURE);
 		}
 	}
-	return failed;
+	return (OPR_FAILURE);
 }
 
 /*
@@ -498,15 +461,16 @@ exec_vp(register char *name, register char **argv, char **envp, register Boolean
  *		filter_stderr	If -X is on we redirect stderr
  */
 int
-doexec(register wchar_t *command, register Boolean ignore_error, Boolean redirect_out_err, char *stdout_file, char *stderr_file, pathpt vroot_path, int nice_prio)
+doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
+    char *stdout_file, char *stderr_file, pathpt vroot_path, int nice_prio)
 {
 	int			arg_count = 5;
 	char			**argv;
 	int			length;
 	char			nice_prio_buf[MAXPATHLEN];
-	register char		**p;
+	char		**p;
 	wchar_t			*q;
-	register wchar_t	*t;
+	wchar_t	*t;
 	char			*tmp_mbs_buffer;
 
 	/*
@@ -612,7 +576,7 @@ doexec(register wchar_t *command, register Boolean ignore_error, Boolean redirec
  *		target		The target we are building, for error msgs
  *		command		The command we ran, for error msgs
  *		running_pid	The pid of the process we are waiting for
- *		
+ *
  *	Static variables used:
  *		filter_file	The fd for the filter file
  *		filter_file_name The name of the filter file
@@ -620,13 +584,10 @@ doexec(register wchar_t *command, register Boolean ignore_error, Boolean redirec
  *	Global variables used:
  *		filter_stderr	Set if -X is on
  */
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-Boolean
-await(register Boolean ignore_error, register Boolean silent_error, Name target, wchar_t *command, pid_t running_pid, Boolean send_mtool_msgs, XDR *xdrs_p, int job_msg_id)
-#else
-Boolean
-await(register Boolean ignore_error, register Boolean silent_error, Name target, wchar_t *command, pid_t running_pid, Boolean send_mtool_msgs, void *xdrs_p, int job_msg_id)
-#endif
+op_result_t
+await(boolean_t ignore_error, boolean_t silent_error, Name target,
+    wchar_t *command, pid_t running_pid, boolean_t send_mtool_msgs,
+    void *xdrs_p, int job_msg_id)
 {
 #ifdef SUN5_0
         int                     status;
@@ -653,7 +614,7 @@ await(register Boolean ignore_error, register Boolean silent_error, Name target,
 	Avo_CmdOutput		*make_output_msg;
 #endif
 	FILE			*outfp;
-	register pid_t		pid;
+	pid_t		pid;
 	struct stat		stat_buff;
 	int			termination_signal;
 	char			tmp_buf[MAXPATHLEN];
@@ -676,7 +637,7 @@ await(register Boolean ignore_error, register Boolean silent_error, Name target,
 		warning_mksh(NOCATGETS("I'm in await(), and status is 0."));
 #endif
 
-                return succeeded;
+                return (OPR_SUCCESS);
 	}
 
 #ifdef PRINT_EXIT_STATUS
@@ -685,7 +646,7 @@ await(register Boolean ignore_error, register Boolean silent_error, Name target,
 
 #else
         if (status.w_status == 0) {
-                return succeeded;
+                return (OPR_SUCCESS);
 	}
 #endif
 
@@ -776,7 +737,7 @@ await(register Boolean ignore_error, register Boolean silent_error, Name target,
 	warning_mksh(NOCATGETS("I'm in await(), returning failed."));
 #endif
 
-	return failed;
+	return (OPR_FAILURE);
 }
 
 /*
@@ -789,18 +750,18 @@ await(register Boolean ignore_error, register Boolean silent_error, Name target,
  *	Parameters:
  *		command		The command to run
  *		destination	Where to deposit the output from the command
- *		
+ *
  *	Static variables used:
  *
  *	Global variables used:
  */
 void
-sh_command2string(register String command, register String destination)
+sh_command2string(String command, String destination)
 {
-	register FILE		*fd;
-	register int		chr;
+	FILE		*fd;
+	int		chr;
 	int			status;
-	Boolean			command_generated_output = false;
+	boolean_t command_generated_output = B_FALSE;
 
 	command->text.p = (int) nul_char;
 	WCSTOMBS(mbs_buffer, command->buffer.start);
@@ -813,7 +774,7 @@ sh_command2string(register String command, register String destination)
 		if (chr == (int) newline_char) {
 			chr = (int) space_char;
 		}
-		command_generated_output = true;
+		command_generated_output = B_TRUE;
 		append_char(chr, destination);
 	}
 
@@ -827,7 +788,7 @@ sh_command2string(register String command, register String destination)
 	if (command_generated_output){
 		if ( *(destination->text.p-1) == (int) space_char) {
 			* (-- destination->text.p) = '\0';
-		} 
+		}
 	} else {
 		/*
 		 * If the command didn't generate any output,
@@ -835,7 +796,7 @@ sh_command2string(register String command, register String destination)
 		 */
 		*(destination->text.p) = '\0';
 	}
-			
+
 	status = pclose(fd);
 	if (status != 0) {
 		WCSTOMBS(mbs_buffer, command->buffer.start);

@@ -30,9 +30,9 @@
 #TOP =		../../../..
 include $(TOP)/rules/variant.mk
 
-all :=		TARG = all 
-install :=		TARG = install 
-clean :=		TARG = clean 
+all :=		TARG = all
+install :=		TARG = install
+clean :=		TARG = clean
 test :=		TARG = test
 l10n_install :=	TARG = l10n_install
 i18n_install :=	TARG = i18n_install

@@ -45,16 +45,16 @@
  *		ch		character we want semantics for.
  *
  */
-char
+char_class_t
 get_char_semantics_value(wchar_t ch)
 {
-	static Boolean	char_semantics_setup;
+	static boolean_t char_semantics_setup = B_FALSE;
 
-	if (!char_semantics_setup) {
+	if (char_semantics_setup == B_FALSE) {
 		setup_char_semantics();
-		char_semantics_setup = true;
+		char_semantics_setup = B_TRUE;
 	}
-	return char_semantics[get_char_semantics_entry(ch)];
+	return (char_semantics[get_char_semantics_entry(ch)]);
 }
 
 /*
@@ -74,9 +74,9 @@ get_char_semantics_value(wchar_t ch)
 int
 get_char_semantics_entry(wchar_t ch)
 {
-	wchar_t		*char_sem_char;
+	wchar_t *char_sem_char;
 
-	char_sem_char = (wchar_t *) wschr(char_semantics_char, ch);
+	char_sem_char = (wchar_t *) wcschr(char_semantics_char, ch);
 	if (char_sem_char == NULL) {
 		/*
 		 * Return the integer entry for the last slot,
@@ -87,4 +87,3 @@ get_char_semantics_entry(wchar_t ch)
 		return (char_sem_char - char_semantics_char);
 	}
 }
-

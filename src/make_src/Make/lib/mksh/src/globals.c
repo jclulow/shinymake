@@ -45,8 +45,8 @@
 /*
  * Global variables
  */
-char		char_semantics[CHAR_SEMANTICS_ENTRIES];
-wchar_t		char_semantics_char[] = {
+char_class_t char_semantics[CHAR_SEMANTICS_ENTRIES];
+wchar_t char_semantics_char[] = {
 	ampersand_char,
 	asterisk_char,
 	at_char,
@@ -79,13 +79,13 @@ wchar_t		char_semantics_char[] = {
 #endif
 	nul_char
 };
-Macro_list	cond_macro_list;
-Boolean		conditional_macro_used;
-Boolean		do_not_exec_rule;		/* `-n' */
-Boolean		dollarget_seen;
-Boolean		dollarless_flag;
-Name		dollarless_value;
-Envvar		envvar;
+macro_list_t	cond_macro_list = NULL;
+boolean_t	conditional_macro_used;
+boolean_t	do_not_exec_rule;		/* `-n' */
+boolean_t	dollarget_seen;
+boolean_t	dollarless_flag;
+name_t		*dollarless_value = NULL;
+envvar_t	*envvar = NULL;
 #ifdef lint
 char		**environ;
 #endif
@@ -94,36 +94,49 @@ int		exit_status;
 #endif
 wchar_t		*file_being_read;
 /* Variable gnu_style=true if env. var. SUN_MAKE_COMPAT_MODE=GNU (RFE 4866328) */
-Boolean		gnu_style = false;
-Name_set	hashtab;
-Name		host_arch;
-Name		host_mach;
+boolean_t	gnu_style = B_FALSE;
+name_set_t	hashtab = { NULL };
 int		line_number;
 char		*make_state_lockfile;
-Boolean		make_word_mentioned;
-Makefile_type	makefile_type = reading_nothing;
+boolean_t	make_word_mentioned;
+makefile_type_t	makefile_type = MFT_READING_NOTHING;
 char		mbs_buffer[(MAXPATHLEN * MB_LEN_MAX)];
-Name		path_name;
-Boolean		posix = true;
-Name		hat;
-Name		query;
-Boolean		query_mentioned;
-Boolean		reading_environment;
-Name		shell_name;
-Boolean		svr4 = false;
-Name		target_arch;
-Name		target_mach;
-Boolean		tilde_rule;
-Name		virtual_root;
-Boolean		vpath_defined;
-Name		vpath_name;
+boolean_t	posix = B_TRUE;
+name_t		*hat = NULL;
+name_t		*query = NULL;
+boolean_t	query_mentioned;
+boolean_t	reading_environment;
+boolean_t	svr4 = B_FALSE;
+boolean_t	tilde_rule;
+#if 0
+name_t		*virtual_root = NULL;
+name_t		*path_name = NULL;
+boolean_t	vpath_defined;
+name_t		*vpath_name = NULL;
+#endif
 wchar_t		wcs_buffer[MAXPATHLEN];
-Boolean		working_on_targets;
+boolean_t	working_on_targets;
 #if defined (TEAMWARE_MAKE_CMN) && defined(REDIRECT_ERR)
-Boolean		out_err_same;
+boolean_t	out_err_same;
 #endif
 pid_t		childPid = -1;	// This variable is used for killing child's process
 				// Such as qrsh, running command, etc.
+
+/*
+ * Magic Macros:
+ *   HOST_ARCH, TARGET_ARCH
+ *   HOST_MACH, TARGET_MACH
+ *   SHELL
+ */
+name_t *magic_macros[_MMI_MAX_ID - 1] = { NULL };
+
+#if 0
+name_t		host_arch = { 0 };
+name_t		host_mach = { 0 };
+name_t		target_arch = { 0 };
+name_t		target_mach = { 0 };
+name_t		*shell_name = NULL;
+#endif
 
 /*
  * timestamps defined in defs.h

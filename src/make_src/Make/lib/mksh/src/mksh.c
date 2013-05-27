@@ -44,6 +44,7 @@
  * Workaround for NFS bug. Sometimes, when running 'chdir' on a remote
  * dmake server, it fails with "Stale NFS file handle" error.
  * The second attempt seems to work.
+ * XXX THIS IS TERRIBLE
  */
 int
 my_chdir(char * dir) {
@@ -228,12 +229,12 @@ init_mksh_globals(char *shell)
 	MBSTOWCS(wcs_buffer, shell);
 	(void) SETVAR(shell_name, GETNAME(wcs_buffer, FIND_LENGTH), false);
  */
-	char * dmake_shell;
+	char *dmake_shell;
 	if ((dmake_shell = getenv(NOCATGETS("DMAKE_SHELL"))) == NULL) {
 		dmake_shell = shell;
-	} 
+	}
 	MBSTOWCS(wcs_buffer, dmake_shell);
-	shell_name = GETNAME(wcs_buffer, FIND_LENGTH);
+	magic_macros[MMI_SHELL - 1] = GETNAME(wcs_buffer, FIND_LENGTH);
 }
 
 /*
@@ -270,5 +271,3 @@ change_sunpro_dependencies_value(char *oldpath, char *newpath)
 		}
 	}
 }
-
-
