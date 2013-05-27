@@ -33,12 +33,11 @@ CC=/ws/plat/proto/usr/bin/gcc
 CCC=/bin/false
 CC64=/bin/false
 CCC64=/bin/false
-MAKE="/opt/local/bin/dmake -m serial"
 
-export CC CCC CC64 CCC64 MAKE
+export CC CCC CC64 CCC64
 
-if [[ -z "$PREFIX" || -z "$DESTDIR" ]]; then
-  fatal 2 "please set PREFIX and DESTDIR"
+if [[ -z "$PREFIX" || -z "$DESTDIR" || -z "$MAKE" ]]; then
+  fatal 2 "please set PREFIX and DESTDIR and MAKE"
 fi
 
 if [[ ! -d "$DESTDIR" ]]; then

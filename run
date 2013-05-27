@@ -6,14 +6,14 @@ set -o errexit
 
 export DESTDIR=/
 export PREFIX=${DIR}/BUILD
-export MAKE=/opt/local/bin/dmake
+export MAKE="/opt/local/bin/dmake -m serial"
 
 rm -rf ${DIR}/BUILD
 
 cd $DIR/src
 
 echo "cleaning ..."
-./build clean
+./build clean 2>&1
 echo "building ..."
-./build install
+./build install 2>&1
 
