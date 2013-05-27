@@ -137,15 +137,6 @@ name_free(name_t *n)
 	free(n);
 }
 
-void
-name_append_string(name_t *n, wchar_t *s)
-{
-	size_t len = wcslen(s);
-
-	append_string_wide(s, n->n_key, FIND_LENGTH);
-	n->n_key_length += len;
-}
-
 name_set_t *
 nms_alloc(void)
 {
@@ -257,7 +248,7 @@ wchar_alloc(size_t length)
 {
 	wchar_t *ret = (wchar_t *)xmalloc(length * sizeof (wchar_t));
 
-	ret[0] = (wchar_t)0; /* '\0' */
+	ret[0] = L'\0'; /* '\0' */
 
 	return (ret);
 }
@@ -335,7 +326,7 @@ append_string_wide(wchar_t *from, string_t *to, size_t length)
 		(void) wcsncpy(to->str_p, from, length);
 		to->str_p += length;
 	}
-	*(to->str_p) = (wchar_t)0;
+	*(to->str_p) = L'\0';
 }
 
 /*
@@ -359,7 +350,7 @@ append_char(wchar_t from, string_t *to)
 		expand_string(to, to->str_buf_end - to->str_buf_start + 32);
 
 	*(to->str_p)++ = from;
-	*(to->str_p) = (wchar_t)0;
+	*(to->str_p) = L'\0';
 }
 
 /*
@@ -377,7 +368,49 @@ append_string(char *from, string_t *to, size_t length)
 		(void) mbstowcs(to->str_p, from, length);
 		to->str_p += length;
 	}
-	*(to->str_p) = (wchar_t)0;
+	*(to->str_p) = L'\0';
+}
+
+char *
+extract_cstring(wchar_t *start, size_t length)
+{
+	size_t ipos = 0, opos = 0;
+	size_t sz = 32 * MB_CUR_MAX;
+	char *out = realloc(NULL, sz);
+	boolean_t done = B_FALSE;
+
+	while (done == B_FALSE) {
+		size_t dlt;
+
+		if (opos + MB_CUR_MAX + 1 >= sz) {
+			sz *= 2;
+			out = realloc(out, sz);
+		}
+
+		if (length != FIND_LENGTH && ipos >= length) {
+			/*
+			 * End the string.
+			 */
+			dlt = wcrtomb(&out[opos], L'\0', NULL);
+			done = B_TRUE;
+		} else {
+			dlt = wcrtomb(&out[opos], start[ipos], NULL);
+			if (start[ipos] == L'\0')
+				done = B_TRUE;
+		}
+		if (dlt == (size_t)-1) {
+			/*
+			 * XXX
+			 */
+			fprintf(stderr, "ERROR: string encoding: %s\n",
+			    strerror(errno));
+			exit(34);
+		}
+		opos += dlt;
+		ipos++;
+	}
+
+	return (out);
 }
 
 wstring_t *
@@ -395,7 +428,7 @@ wstr_alloc(name_t *n)
 
 	wstr->wstr_str.str_p = wstr->wstr_str.str_end =
 	    wstr->wstr_str.str_buf_start;
-	wstr->wstr_str.str_p[0] = WCNUL;
+	wstr->wstr_str.str_p[0] = L'\0';
 
 	if (n != NULL)
 		append_string_wide(n->n_key, &wstr->wstr_str, FIND_LENGTH);

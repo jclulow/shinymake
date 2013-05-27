@@ -39,6 +39,7 @@ name_t *nms_next(name_set_t *, void **);
 void append_char(wchar_t, string_t *);
 void append_string(char *, string_t *, size_t);
 void append_string_wide(wchar_t *, string_t *, size_t);
+char *extract_cstring(wchar_t *, size_t);
 size_t property_body_size(property_id_t);
 wstring_t *wstr_alloc(name_t *);
 property_t *append_prop(name_t *, property_id_t);

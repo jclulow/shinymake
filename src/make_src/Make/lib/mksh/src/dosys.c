@@ -52,7 +52,7 @@
 /*
  * Defined macros
  */
-#define SEND_MTOOL_MSG(cmds)
+#define	__UNUSED	__attribute__((unused))
 
 /*
  * typedefs & structs
@@ -220,8 +220,7 @@ dosys_mksh(name_t *command, boolean_t ignore_error, boolean_t call_make,
 		waitfor = doexec(q, ignore_error, redirect_out_err,
 		    stdout_file, stderr_file, vroot_path, nice_prio);
 	}
-	if (await(ignore_error, silent_error, target, cmd_string, waitfor,
-	    B_FALSE, NULL, -1)) {
+	if (await(ignore_error, silent_error, target, cmd_string, waitfor)) {
 		result = DON_OK;
 	} else {
 		result = DON_FAILED;
@@ -273,16 +272,11 @@ dosys_mksh(name_t *command, boolean_t ignore_error, boolean_t call_make,
 int
 doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err, char *stdout_file, char *stderr_file, int nice_prio)
 {
-	char			*argv[6];
-	int			argv_index = 0;
-	int			cmd_argv_index;
-	int			length;
-	char			nice_prio_buf[MAXPATHLEN];
-	char		*shellname;
-	char			*tmp_mbs_buffer;
-
+	char *argv[6];
+	int argv_index = 0;
+	char nice_prio_buf[MAXPATHLEN];
 	name_t *shell;
-	char *snbuf[MAXPATHLEN], *shellname;
+	char *shell_cstr, *cmd_cstr;
 
 	/*
 	 * Attempt to expand the SHELL macro:
@@ -295,12 +289,7 @@ doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err, ch
 		 */
 		shell = get_magic_macro(MMI_SHELL);
 	}
-
-	if ((shellname = strrchr(shell->string_mb, (int) slash_char)) == NULL) {
-		shellname = shell->string_mb;
-	} else {
-		shellname++;
-	}
+	shell_cstr = extract_cstring(shell->n_key, FIND_LENGTH);
 
 	/*
 	 * Only prepend the /usr/bin/nice command to the original command
@@ -311,33 +300,23 @@ doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err, ch
 		argv[argv_index++] = NOCATGETS("nice");
 		(void) sprintf(nice_prio_buf, NOCATGETS("-%d"), nice_prio);
 		argv[argv_index++] = strdup(nice_prio_buf);
+		argv[argv_index++] = shell_cstr;
+	} else {
+		char *lastslash = strrchr(shell_cstr, '/');
+		argv[argv_index++] = lastslash != NULL ? lastslash + 1 :
+		    shell_cstr;
 	}
-	argv[argv_index++] = shellname;
 	argv[argv_index++] = (char*)(ignore_error ? NOCATGETS("-c") :
 	    NOCATGETS("-ce"));
-	if ((length = wslen(command)) >= MAXPATHLEN) {
-		tmp_mbs_buffer = getmem((length * MB_LEN_MAX) + 1);
-                (void) wcstombs(tmp_mbs_buffer, command, (length * MB_LEN_MAX) + 1);
-		cmd_argv_index = argv_index;
-                argv[argv_index++] = strdup(tmp_mbs_buffer);
-                retmem_mb(tmp_mbs_buffer);
-	} else {
-		WCSTOMBS(mbs_buffer, command);
-		cmd_argv_index = argv_index;
-#if defined(linux)
-		int mbl = strlen(mbs_buffer);
-		if(mbl > 2) {
-			if(mbs_buffer[mbl-1] == '\n' && mbs_buffer[mbl-2] == '\\') {
-				mbs_buffer[mbl] = '\n';
-				mbs_buffer[mbl+1] = 0;
-			}
-		}
-#endif
-		argv[argv_index++] = strdup(mbs_buffer);
-	}
+
+	argv[argv_index++] = cmd_cstr = extract_cstring(command, FIND_LENGTH);
 	argv[argv_index] = NULL;
+
 	(void) fflush(stdout);
 	if ((childPid = fork()) == 0) {
+		/*
+		 * We're in the child process, so prepare to exec:
+		 */
 		enable_interrupt((void (*) (int)) SIG_DFL);
 		if (redirect_out_err) {
 			redirect_io(stdout_file, stderr_file);
@@ -348,22 +327,26 @@ doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err, ch
 		}
 #endif
 		if (nice_prio != 0) {
-			(void) execve(NOCATGETS("/usr/bin/nice"), argv, environ);
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 92, "Could not load `/usr/bin/nice': %s"),
-			      errmsg(errno));
+			(void) execve(NOCATGETS("/usr/bin/nice"), argv,
+			    environ);
+			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 92,
+			    "Could not load `/usr/bin/nice': %s"),
+			    errmsg(errno));
 		} else {
-			(void) execve(shell->string_mb, argv, environ);
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 93, "Could not load Shell from `%s': %s"),
-			      shell->string_mb,
-			      errmsg(errno));
+			(void) execve(shell_cstr, argv, environ);
+			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 93,
+			    "Could not load Shell from `%ls': %s"),
+			    shell->n_key, errmsg(errno));
 		}
+	} else if (childPid == -1) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 94,
+		    "fork failed: %s"), errmsg(errno));
 	}
-	if (childPid  == -1) {
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 94, "fork failed: %s"),
-		      errmsg(errno));
-	}
-	retmem_mb(argv[cmd_argv_index]);
-	return childPid;
+
+	free(shell_cstr);
+	free(cmd_cstr);
+
+	return (childPid);
 }
 
 /*
@@ -389,45 +372,48 @@ static op_result_t
 exec_vp(char *name, char **argv, char **envp, boolean_t ignore_error,
     pathpt vroot_path)
 {
-	Name		shell = getvar(shell_name);
-	char		*shellname;
-	char			*shargv[4];
-	Name			tmp_shell;
+	name_t *shell;
+	char *shell_cstr;
+	char *shargv[4];
+	char *shell_base;
+	int i;
 
-	if (IS_EQUAL(shell->string_mb, "")) {
-		shell = shell_name;
+	/*
+	 * Attempt to expand the SHELL macro:
+	 */
+	shell = getvar(get_magic_macro(MMI_SHELL));
+	if (wcslen(shell->n_key) == 0) {
+		/*
+		 * The expansion resulted in the empty string.  Use the value
+		 * without expansion:
+		 */
+		shell = get_magic_macro(MMI_SHELL);
 	}
+	shell_cstr = extract_cstring(shell->n_key, FIND_LENGTH);
+	/*
+	 * Find the shell basename:
+	 */
+	shell_base = strrchr(shell_cstr, '/');
+	shell_base = shell_base != NULL ? shell_base + 1 : shell_cstr;
 
-	for (int i = 0; i < 5; i++) {
-		(void) execve_vroot(name,
-				    argv + 1,
-				    envp,
-				    vroot_path,
-				    VROOT_DEFAULT);
+	for (i = 0; i < 5; i++) {
+		(void) execve_vroot(name, argv + 1, envp, vroot_path,
+		    VROOT_DEFAULT);
 		switch (errno) {
 		case ENOEXEC:
 		case ENOENT:
-			/* That failed. Let the shell handle it */
-			shellname = strrchr(shell->string_mb, (int) slash_char);
-			if (shellname == NULL) {
-				shellname = shell->string_mb;
-			} else {
-				shellname++;
-			}
-			shargv[0] = shellname;
+			/*
+			 * That failed. Let the shell handle it.
+			 */
+			shargv[0] = shell_base;
 			shargv[1] = (char*)(ignore_error == B_TRUE ?
 			    NOCATGETS("-c") : NOCATGETS("-ce"));
 			shargv[2] = argv[0];
 			shargv[3] = NULL;
-			tmp_shell = getvar(shell_name);
-			if (IS_EQUAL(tmp_shell->string_mb, "")) {
-				tmp_shell = shell_name;
-			}
-			(void) execve_vroot(tmp_shell->string_mb,
-					    shargv,
-					    envp,
-					    vroot_path,
-					    VROOT_DEFAULT);
+
+			(void) execve_vroot(shell_cstr, shargv, envp,
+			    vroot_path, VROOT_DEFAULT);
+
 			return (OPR_FAILURE);
 		case ETXTBSY:
 			/*
@@ -464,6 +450,7 @@ int
 doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
     char *stdout_file, char *stderr_file, pathpt vroot_path, int nice_prio)
 {
+	int i;
 	int			arg_count = 5;
 	char			**argv;
 	int			length;
@@ -493,15 +480,7 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
 	 * In fact, doing it may cause the sh command to fail!
 	 */
 	p = &argv[1];
-	if ((length = wslen(command)) >= MAXPATHLEN) {
-		tmp_mbs_buffer = getmem((length * MB_LEN_MAX) + 1);
-		(void) wcstombs(tmp_mbs_buffer, command, (length * MB_LEN_MAX) + 1);
-		argv[0] = strdup(tmp_mbs_buffer);
-		retmem_mb(tmp_mbs_buffer);
-        } else {
-		WCSTOMBS(mbs_buffer, command);
-		argv[0] = strdup(mbs_buffer);
-	}
+	argv[0] = extract_cstring(command, FIND_LENGTH);
 
 	if (nice_prio != 0) {
 		*p++ = strdup(NOCATGETS("/usr/bin/nice"));
@@ -513,9 +492,9 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
 		if (p >= &argv[arg_count]) {
 			/* This should never happen, right? */
 			WCSTOMBS(mbs_buffer, command);
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 95, "Command `%s' has more than %d arguments"),
-			      mbs_buffer,
-			      arg_count);
+			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 95,
+			    "Command `%s' has more than %d arguments"),
+			    mbs_buffer, arg_count);
 		}
 		q = t;
 		while (!iswspace(*t) && (*t != (int) nul_char)) {
@@ -525,10 +504,10 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
 			for (*t++ = (int) nul_char; iswspace(*t); t++);
 		}
 		if ((length = wslen(q)) >= MAXPATHLEN) {
-			tmp_mbs_buffer = getmem((length * MB_LEN_MAX) + 1);
+			tmp_mbs_buffer = xmalloc((length * MB_LEN_MAX) + 1);
 			(void) wcstombs(tmp_mbs_buffer, q, (length * MB_LEN_MAX) + 1);
 			*p++ = strdup(tmp_mbs_buffer);
-			retmem_mb(tmp_mbs_buffer);
+			free(tmp_mbs_buffer);
 		} else {
 			WCSTOMBS(mbs_buffer, q);
 			*p++ = strdup(mbs_buffer);
@@ -540,7 +519,7 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
 	(void) fflush(stdout);
 	if ((childPid = fork()) == 0) {
 		enable_interrupt((void (*) (int)) SIG_DFL);
-		if (redirect_out_err) {
+		if (redirect_out_err == B_TRUE) {
 			redirect_io(stdout_file, stderr_file);
 		}
 #if 0
@@ -555,10 +534,10 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
 		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 97, "fork failed: %s"),
 		      errmsg(errno));
 	}
-	for (int i = 0; argv[i] != NULL; i++) {
-		retmem_mb(argv[i]);
+	for (i = 0; argv[i] != NULL; i++) {
+		free(argv[i]);
 	}
-	return childPid;
+	return (childPid);
 }
 
 /*
@@ -585,77 +564,29 @@ doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
  *		filter_stderr	Set if -X is on
  */
 op_result_t
-await(boolean_t ignore_error, boolean_t silent_error, Name target,
-    wchar_t *command, pid_t running_pid, boolean_t send_mtool_msgs,
-    void *xdrs_p, int job_msg_id)
+await(boolean_t ignore_error, boolean_t silent_error, name_t *target __UNUSED,
+    wchar_t *command __UNUSED, pid_t running_pid)
 {
-#ifdef SUN5_0
         int                     status;
-#else
-#ifndef WEXITSTATUS
-#define WEXITSTATUS(stat)       stat.w_T.w_Retcode
-#endif
-#ifndef WTERMSIG
-#define WTERMSIG(stat)          stat.w_T.w_Termsig
-#endif
-#ifndef WCOREDUMP
-#define WCOREDUMP(stat)         stat.w_T.w_Coredump
-#endif
-#if defined (HP_UX) || defined (linux)
-	int			status;
-#else
-	union wait		status;
-#endif
-#endif
-	char			*buffer;
 	int			core_dumped;
 	int			exit_status;
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-	Avo_CmdOutput		*make_output_msg;
-#endif
-	FILE			*outfp;
 	pid_t		pid;
-	struct stat		stat_buff;
 	int			termination_signal;
 	char			tmp_buf[MAXPATHLEN];
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-	RWCollectable		*xdr_msg;
-#endif
 
 	while ((pid = wait(&status)) != running_pid) {
 		if (pid == -1) {
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 98, "wait() failed: %s"), errmsg(errno));
+			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 98,
+			    "wait() failed: %s"), errmsg(errno));
 		}
 	}
 	(void) fflush(stdout);
 	(void) fflush(stderr);
 
-#if defined(SUN5_0) || defined(HP_UX) || defined(linux)
-        if (status == 0) {
-
-#ifdef PRINT_EXIT_STATUS
-		warning_mksh(NOCATGETS("I'm in await(), and status is 0."));
-#endif
-
+        if (status == 0)
                 return (OPR_SUCCESS);
-	}
-
-#ifdef PRINT_EXIT_STATUS
-	warning_mksh(NOCATGETS("I'm in await(), and status is *NOT* 0."));
-#endif
-
-#else
-        if (status.w_status == 0) {
-                return (OPR_SUCCESS);
-	}
-#endif
 
         exit_status = WEXITSTATUS(status);
-
-#ifdef PRINT_EXIT_STATUS
-	warning_mksh(NOCATGETS("I'm in await(), and exit_status is %d."), exit_status);
-#endif
-
         termination_signal = WTERMSIG(status);
         core_dumped = WCOREDUMP(status);
 
@@ -663,79 +594,28 @@ await(boolean_t ignore_error, boolean_t silent_error, Name target,
 	 * If the child returned an error, we now try to print a
 	 * nice message about it.
 	 */
-	SEND_MTOOL_MSG(
-		make_output_msg = new Avo_CmdOutput();
-		(void) sprintf(tmp_buf, "%d", job_msg_id);
-		make_output_msg->appendOutput(AVO_STRDUP(tmp_buf));
-	);
-
 	tmp_buf[0] = (int) nul_char;
-	if (!silent_error) {
+	if (silent_error == B_FALSE) {
 		if (exit_status != 0) {
-			(void) fprintf(stdout,
-				       catgets(libmksdmsi18n_catd, 1, 103, "*** Error code %d"),
-				       exit_status);
-			SEND_MTOOL_MSG(
-				(void) sprintf(&tmp_buf[strlen(tmp_buf)],
-					       catgets(libmksdmsi18n_catd, 1, 104, "*** Error code %d"),
-					       exit_status);
-			);
+			(void) fprintf(stdout, catgets(libmksdmsi18n_catd, 1,
+			    103, "*** Error code %d"), exit_status);
 		} else {
-#if ! defined(SUN5_0) && ! defined(HP_UX) && ! defined(linux)
-			if (termination_signal > NSIG) {
-#endif
-				(void) fprintf(stdout,
-					       catgets(libmksdmsi18n_catd, 1, 105, "*** Signal %d"),
-					       termination_signal);
-				SEND_MTOOL_MSG(
-					(void) sprintf(&tmp_buf[strlen(tmp_buf)],
-						       catgets(libmksdmsi18n_catd, 1, 106, "*** Signal %d"),
-						       termination_signal);
-				);
-#if ! defined(SUN5_0) && ! defined(HP_UX) && ! defined(linux)
-			} else {
-				(void) fprintf(stdout,
-					       "*** %s",
-					       sys_siglist[termination_signal]);
-				SEND_MTOOL_MSG(
-					(void) sprintf(&tmp_buf[strlen(tmp_buf)],
-						       "*** %s",
-						       sys_siglist[termination_signal]);
-				);
-			}
-#endif
+			(void) fprintf(stdout, catgets(libmksdmsi18n_catd, 1,
+			    105, "*** Signal %d"), termination_signal);
+
 			if (core_dumped) {
-				(void) fprintf(stdout,
-					       catgets(libmksdmsi18n_catd, 1, 107, " - core dumped"));
-				SEND_MTOOL_MSG(
-					(void) sprintf(&tmp_buf[strlen(tmp_buf)],
-						       catgets(libmksdmsi18n_catd, 1, 108, " - core dumped"));
-				);
+				(void) fprintf(stdout, catgets(
+				    libmksdmsi18n_catd, 1, 107,
+				    " - core dumped"));
 			}
 		}
-		if (ignore_error) {
-			(void) fprintf(stdout,
-				       catgets(libmksdmsi18n_catd, 1, 109, " (ignored)"));
-			SEND_MTOOL_MSG(
-				(void) sprintf(&tmp_buf[strlen(tmp_buf)],
-					       catgets(libmksdmsi18n_catd, 1, 110, " (ignored)"));
-			);
+		if (ignore_error == B_TRUE) {
+			(void) fprintf(stdout, catgets(libmksdmsi18n_catd, 1,
+			    109, " (ignored)"));
 		}
 		(void) fprintf(stdout, "\n");
 		(void) fflush(stdout);
-		SEND_MTOOL_MSG(
-			make_output_msg->appendOutput(AVO_STRDUP(tmp_buf));
-		);
 	}
-	SEND_MTOOL_MSG(
-		xdr_msg = (RWCollectable*) make_output_msg;
-		xdr(xdrs_p, xdr_msg);
-		delete make_output_msg;
-	);
-
-#ifdef PRINT_EXIT_STATUS
-	warning_mksh(NOCATGETS("I'm in await(), returning failed."));
-#endif
 
 	return (OPR_FAILURE);
 }
@@ -756,19 +636,21 @@ await(boolean_t ignore_error, boolean_t silent_error, Name target,
  *	Global variables used:
  */
 void
-sh_command2string(String command, String destination)
+sh_command2string(string_t *command, string_t *destination)
 {
 	FILE		*fd;
 	int		chr;
 	int			status;
 	boolean_t command_generated_output = B_FALSE;
+	char *cmd_cstr;
 
-	command->text.p = (int) nul_char;
-	WCSTOMBS(mbs_buffer, command->buffer.start);
-	if ((fd = popen(mbs_buffer, "r")) == NULL) {
-		WCSTOMBS(mbs_buffer, command->buffer.start);
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 111, "Could not run command `%s' for :sh transformation"),
-		      mbs_buffer);
+	command->str_p = L'\0';
+	cmd_cstr = extract_cstring(command->str_buf_start, FIND_LENGTH);
+
+	if ((fd = popen(cmd_cstr, "r")) == NULL) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 111,
+		    "Could not run command `%ls' for :sh transformation"),
+		    command->str_buf_start);
 	}
 	while ((chr = getc(fd)) != EOF) {
 		if (chr == (int) newline_char) {
@@ -786,24 +668,23 @@ sh_command2string(String command, String destination)
 	 * We don't need that
 	 */
 	if (command_generated_output){
-		if ( *(destination->text.p-1) == (int) space_char) {
-			* (-- destination->text.p) = '\0';
+		if ( *(destination->str_p-1) == (int) space_char) {
+			* (-- destination->str_p) = '\0';
 		}
 	} else {
 		/*
 		 * If the command didn't generate any output,
 		 * set the buffer to a null string.
 		 */
-		*(destination->text.p) = '\0';
+		*(destination->str_p) = '\0';
 	}
 
 	status = pclose(fd);
 	if (status != 0) {
-		WCSTOMBS(mbs_buffer, command->buffer.start);
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 112, "The command `%s' returned status `%d'"),
-		      mbs_buffer,
-		      WEXITSTATUS(status));
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 112,
+		    "The command `%s' returned status `%d'"),
+		    cmd_cstr, WEXITSTATUS(status));
 	}
+
+	free(cmd_cstr);
 }
-
-

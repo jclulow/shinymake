@@ -28,9 +28,7 @@
 #include <mksh/defs.h>
 #include <vroot/vroot.h>
 
-boolean_t await(boolean_t ignore_error, boolean_t silent_error,
-    name_t *target, wchar_t *command, pid_t running_pid,
-    boolean_t send_mtool_msgs, void *xdrs, int job_msg_id);
+op_result_t await(boolean_t, boolean_t, name_t *, wchar_t *, pid_t running_pid);
 int doexec(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,
     char *stdout_file, char *stderr_file, pathpt vroot_path, int nice_prio);
 int doshell(wchar_t *command, boolean_t ignore_error, boolean_t redirect_out_err,

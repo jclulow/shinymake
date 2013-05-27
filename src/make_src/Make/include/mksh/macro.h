@@ -27,6 +27,9 @@
 
 #include <mksh/defs.h>
 
+boolean_t is_magic_macro_name(magic_macro_id_t, name_t *);
+name_t *get_magic_macro(magic_macro_id_t);
+
 void expand_macro(source_t *source, string_t *destination,
     wchar_t *current_string, boolean_t cmd);
 void expand_value(name_t *value, string_t *destination, boolean_t cmd);
