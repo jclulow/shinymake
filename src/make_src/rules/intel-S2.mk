@@ -50,5 +50,5 @@ CFLAGS +=	-fPIC
 #
 # amd64-S2 Flags
 #
-amd64-S2 := V9FLAGS = -m64
+amd64-S2 := V9FLAGS = -m64 -msave-args
 amd64-S2 := VAR_DIR = /amd64
