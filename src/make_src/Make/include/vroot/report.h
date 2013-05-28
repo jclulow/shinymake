@@ -41,7 +41,6 @@ extern int	file_lock(char *name, char *lockname, int *file_locked, int timeout);
  * NSE - the two systems must track each other.
  * XXX - THERE IS NO NSE; ONLY ZUUL
  */
-#if 0
 #define NSE_DEPINFO 		".nse_depinfo"
 #define NSE_DEPINFO_LOCK 	".nse_depinfo.lock"
 #define NSE_DEP_ENV 		"NSE_DEP"
@@ -49,6 +48,5 @@ extern int	file_lock(char *name, char *lockname, int *file_locked, int timeout);
 #define NSE_TFS_PUSH_LEN 	8
 #define NSE_VARIANT_ENV 	"NSE_VARIANT"
 #define NSE_RT_SOURCE_NAME 	"Shared_Source"
-#endif
 
 #endif	/* _REPORT_H_ */

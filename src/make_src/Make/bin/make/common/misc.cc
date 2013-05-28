@@ -22,11 +22,6 @@
  * Copyright 2005 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)misc.cc 1.50 06/12/12
- */
-
-#pragma	ident	"@(#)misc.cc	1.34	95/10/04"
 
 /*
  *	misc.cc
@@ -602,16 +597,15 @@ print_target_n_deps(register Name target)
 void
 load_cached_names(void)
 {
+	wchar_t *shtmp;
 	char		*cp;
 	Name		dollar;
 
-	/* Load the cached_names struct */
-	MBSTOWCS(wcs_buffer, NOCATGETS(".BUILT_LAST_MAKE_RUN"));
-	built_last_make_run = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("@"));
-	c_at = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(" *conditionals* "));
-	conditionals = GETNAME(wcs_buffer, FIND_LENGTH);
+	/*
+	 * Pre-populate cached names:
+	 */
+	conditionals = GETNAME(L" *conditionals*", FIND_LENGTH);
+
 	/*
 	 * A version of make was released with NSE 1.0 that used
 	 * VERSION-1.1 but this version is identical to VERSION-1.0.
@@ -619,144 +613,29 @@ load_cached_names(void)
 	 * situation.  If the version number is changed from 1.0
 	 * it should go to 1.2.
 	 */
-	MBSTOWCS(wcs_buffer, NOCATGETS("VERSION-1.0"));
-	current_make_version = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".SVR4"));
-	svr4_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".POSIX"));
-	posix_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".DEFAULT"));
-	default_rule_name = GETNAME(wcs_buffer, FIND_LENGTH);
-#ifdef NSE
-	MBSTOWCS(wcs_buffer, NOCATGETS(".DERIVED_SRC"));
-        derived_src= GETNAME(wcs_buffer, FIND_LENGTH);
-#endif
-	MBSTOWCS(wcs_buffer, NOCATGETS("$"));
-	dollar = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".DONE"));
-	done = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("."));
-	dot = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".KEEP_STATE"));
-	dot_keep_state = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".KEEP_STATE_FILE"));
-	dot_keep_state_file = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(""));
-	empty_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(" FORCE"));
-	force = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("HOST_ARCH"));
-	host_arch = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("HOST_MACH"));
-	host_mach = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".IGNORE"));
-	ignore_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".INIT"));
-	init = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".LOCAL"));
-	localhost_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".make.state"));
-	make_state = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("MAKEFLAGS"));
-	makeflags = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".MAKE_VERSION"));
-	make_version = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".NO_PARALLEL"));
-	no_parallel_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".NOT_AUTO"));
-	not_auto = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".PARALLEL"));
-	parallel_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("PATH"));
-	path_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("+"));
-	plus = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".PRECIOUS"));
-	precious = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("?"));
-	query = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("^"));
-	hat = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".RECURSIVE"));
-	recursive_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".SCCS_GET"));
-	sccs_get_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".SCCS_GET_POSIX"));
-	sccs_get_posix_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".GET"));
-	get_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".GET_POSIX"));
-	get_posix_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("SHELL"));
-	shell_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".SILENT"));
-	silent_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".SUFFIXES"));
-	suffixes_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, SUNPRO_DEPENDENCIES);
-	sunpro_dependencies = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("TARGET_ARCH"));
-	target_arch = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("TARGET_MACH"));
-	target_mach = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("VIRTUAL_ROOT"));
-	virtual_root = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS("VPATH"));
-	vpath_name = GETNAME(wcs_buffer, FIND_LENGTH);
-	MBSTOWCS(wcs_buffer, NOCATGETS(".WAIT"));
-	wait_name = GETNAME(wcs_buffer, FIND_LENGTH);
+	current_make_version = GETNAME(L"VERSION-1.0", FIND_LENGTH);
 
-	wait_name->state = build_ok;
-
-	/* Mark special targets so that the reader treats them properly */
-	svr4_name->special_reader = svr4_special;
-	posix_name->special_reader = posix_special;
-	built_last_make_run->special_reader = built_last_make_run_special;
-	default_rule_name->special_reader = default_special;
-#ifdef NSE
-        derived_src->special_reader= derived_src_special;
-#endif
-	dot_keep_state->special_reader = keep_state_special;
-	dot_keep_state_file->special_reader = keep_state_file_special;
-	ignore_name->special_reader = ignore_special;
-	make_version->special_reader = make_version_special;
-	no_parallel_name->special_reader = no_parallel_special;
-	parallel_name->special_reader = parallel_special;
-	localhost_name->special_reader = localhost_special;
-	precious->special_reader = precious_special;
-	sccs_get_name->special_reader = sccs_get_special;
-	sccs_get_posix_name->special_reader = sccs_get_posix_special;
-	get_name->special_reader = get_special;
-	get_posix_name->special_reader = get_posix_special;
-	silent_name->special_reader = silent_special;
-	suffixes_name->special_reader = suffixes_special;
-
+	dollar = GETNAME(L"$", FIND_LENGTH);
 	/* The value of $$ is $ */
-	(void) SETVAR(dollar, dollar, false);
-	dollar->dollar = false;
+	(void) SETVAR(dollar, dollar, B_FALSE);
+	dollar->n_dollar = B_FALSE;
+
+	get_magic_macro(MMI_WAIT)->n_state = DON_OK;
 
 	/* Set the value of $(SHELL) */
-	#ifdef HP_UX
-	MBSTOWCS(wcs_buffer, NOCATGETS("/bin/posix/sh"));
-	#else
-	#if defined(SUN5_0)
 	if (posix) {
-	  MBSTOWCS(wcs_buffer, NOCATGETS("/usr/xpg4/bin/sh"));
+		shtmp = L"/usr/xpg4/bin/sh";
 	} else {
-	  MBSTOWCS(wcs_buffer, NOCATGETS("/bin/sh"));
+		shtmp = L"/bin/sh";
 	}
-	#else  /* ^SUN5_0 */
-	MBSTOWCS(wcs_buffer, NOCATGETS("/bin/sh"));
-	#endif /* ^SUN5_0 */
-	#endif
-	(void) SETVAR(shell_name, GETNAME(wcs_buffer, FIND_LENGTH), false);
+	(void) SETVAR(shell_name, GETNAME(shtmp, FIND_LENGTH), B_FALSE);
 
 	/*
 	 * Use " FORCE" to simulate a FRC dependency for :: type
 	 * targets with no dependencies.
 	 */
-	(void) append_prop(force, line_prop);
-	force->stat.time = file_max_time;
+	(void) append_prop(force, PT_LINE);
+	force->n_stat.ns_time = file_max_time;
 
 	/* Make sure VPATH is defined before current dir is read */
 	if ((cp = getenv(vpath_name->string_mb)) != NULL) {

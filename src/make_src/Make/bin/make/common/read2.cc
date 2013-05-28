@@ -1148,6 +1148,12 @@ special_reader(Name target, register Name_vector depes, Cmd_line command)
 {
 	register int		n;
 
+	/*
+	 * XXX rejig this to just use:
+	 *
+	 *     is_magic_macro_name(id, name_t*)
+	 */
+
 	switch (target->special_reader) {
 
 	case svr4_special:

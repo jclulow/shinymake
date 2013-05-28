@@ -55,17 +55,49 @@ static void init_arch_macros(void);
 static void init_mach_macros(void);
 
 static const wchar_t *macro_names[] = {
-	L"HOST_ARCH",		/* MMI_HOST_ARCH */
-	L"HOST_MACH",		/* MMI_HOST_MACH */
-	L"TARGET_ARCH",		/* MMI_TARGET_ARCH */
-	L"TARGET_MACH",		/* MMI_TARGET_MACH */
-	L"SHELL",		/* MMI_SHELL */
-	L"PATH",		/* MMI_PATH */
-	L"VPATH",		/* MMI_VPATH */
-	L"VIRTUAL_ROOT",	/* MMI_VIRTUAL_ROOT */
-	L"MAKE",		/* MMI_MAKE */
-	L"?",			/* MMI_QUERY */
-	L"^"			/* MMI_HAT */
+	L"HOST_ARCH",			/*  1 MMI_HOST_ARCH */
+	L"HOST_MACH",			/*    MMI_HOST_MACH */
+	L"TARGET_ARCH",			/*    MMI_TARGET_ARCH */
+	L"TARGET_MACH",			/*    MMI_TARGET_MACH */
+	L"SHELL",			/*  5 MMI_SHELL */
+	L"PATH",			/*    MMI_PATH */
+	L"VPATH",			/*    MMI_VPATH */
+	L"VIRTUAL_ROOT",		/*    MMI_VIRTUAL_ROOT */
+	L"MAKE",			/*    MMI_MAKE */
+	L"?",				/* 10 MMI_QUERY */
+	L"^",				/*    MMI_HAT */
+	L".POSIX",			/*    MMI_POSIX */
+	L".SVR4",			/*    MMI_SVR4 */
+	L".BUILT_LAST_MAKE_RUN",	/*    MMI_BUILT_LAST_MAKE_RUN */
+	L"@",				/* 15 MMI_AT */
+	L".DEFAULT",			/*    MMI_DEFAULT_RULE */
+	L"$",				/*    MMI_DOLLAR */
+	L".DONE",			/*    MMI_DONE */
+	L".",				/*    MMI_DOT */
+	L".KEEP_STATE",			/* 20 MMI_KEEP_STATE */
+	L".KEEP_STATE_FILE",		/*    MMI_KEEP_STATE_FILE */
+	L"",				/*    MMI_EMPTY_NAME */
+	L" FORCE",			/*    MMI_FORCE */
+	L".IGNORE",			/*    MMI_IGNORE */
+	L".INIT",			/* 25 MMI_INIT */
+	L".LOCAL",			/*    MMI_LOCALHOST */
+	L".make.state",			/*    MMI_MAKE_STATE */
+	L"MAKEFLAGS",			/*    MMI_MAKEFLAGS */
+	L".MAKE_VERSION",		/*    MMI_MAKE_VERSION */
+	L".NO_PARALLEL",		/* 30 MMI_NO_PARALLEL */
+	L".NOT_AUTO",			/*    MMI_NOT_AUTO */
+	L".PARALLEL",			/*    MMI_PARALLEL */
+	L"+",				/*    MMI_PLUS */
+	L".PRECIOUS",			/*    MMI_PRECIOUS */
+	L".RECURSIVE",			/* 35 MMI_RECURSIVE */
+	L".SCCS_GET",			/*    MMI_SCCS_GET */
+	L".SCCS_GET_POSIX",		/*    MMI_SCCS_GET_POSIX */
+	L".GET",			/*    MMI_GET */
+	L".GET_POSIX",			/*    MMI_GET_POSIX */
+	L".SILENT",			/* 40 MMI_SILENT */
+	L".SUFFIXES",			/*    MMI_SUFFIXES */
+	L"SUNPRO_DEPENDENCIES",		/*    MMI_SUNPRO_DEPENDENCIES */
+	L".WAIT",			/*    MMI_WAIT */
 };
 
 static name_t *
