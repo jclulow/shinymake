@@ -19,32 +19,30 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 1998 Sun Microsystems, Inc. All rights reserved.
+ * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)lstat.cc 1.6 06/12/12
- */
-
-#pragma	ident	"@(#)lstat.cc	1.6	06/12/12"
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
-extern int lstat(const char *path, struct stat *buf);
+extern int open(const char *path, int oflag, ...);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	lstat_thunk(char *path)
+static int	open_thunk(char *path)
 {
-	vroot_result= lstat(path, vroot_args.lstat.buffer);
-	return(vroot_result == 0);
+	vroot_result= open(path, vroot_args.open.flags, vroot_args.open.mode);
+	return(vroot_result >= 0);
 }
 
-int	lstat_vroot(char *path, struct stat *buffer, pathpt vroot_path, pathpt vroot_vroot)
+int	open_vroot(char *path, int flags, int mode, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.lstat.buffer= buffer;
-	translate_with_thunk(path, lstat_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.open.flags= flags;
+	vroot_args.open.mode= mode;
+	translate_with_thunk(path, open_thunk, vroot_path, vroot_vroot,
+				((flags & (O_CREAT|O_APPEND)) != 0) ? rw_write : rw_read);
 	return(vroot_result);
 }

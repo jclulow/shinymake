@@ -22,27 +22,22 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)chroot.cc 1.4 06/12/12
- */
-
-#pragma	ident	"@(#)chroot.cc	1.4	06/12/12"
 
 #include <unistd.h>
-
-extern int chroot(const char *path);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	chroot_thunk(char *path)
+static int	readlink_thunk(char *path)
 {
-	vroot_result= chroot(path);
-	return(vroot_result == 0);
+	vroot_result= readlink(path, vroot_args.readlink.buffer, vroot_args.readlink.buffer_size);
+	return(vroot_result >= 0);
 }
 
-int	chroot_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
+int	readlink_vroot(char *path, char *buffer, int buffer_size, pathpt vroot_path, pathpt vroot_vroot)
 {
-	translate_with_thunk(path, chroot_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.readlink.buffer= buffer;
+	vroot_args.readlink.buffer_size= buffer_size;
+	translate_with_thunk(path, readlink_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

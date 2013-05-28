@@ -22,29 +22,22 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)utimes.cc 1.4 06/12/12
- */
 
-#pragma	ident	"@(#)utimes.cc	1.4	06/12/12"
-
-#include <sys/types.h>
-#include <sys/time.h>
-
-extern int utimes(char *file, struct timeval *tvp);
-
+#ifndef SUN5_0
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	utimes_thunk(char *path)
+extern int	unmount(char *name);
+
+static int	unmount_thunk(char *path)
 {
-	vroot_result= utimes(path, vroot_args.utimes.time);
+	vroot_result= unmount(path);
 	return(vroot_result == 0);
 }
 
-int	utimes_vroot(char *path, struct timeval *time, pathpt vroot_path, pathpt vroot_vroot)
+int	unmount_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.utimes.time= time;
-	translate_with_thunk(path, utimes_thunk, vroot_path, vroot_vroot, rw_read);
+	translate_with_thunk(path, unmount_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }
+#endif

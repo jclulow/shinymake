@@ -22,14 +22,24 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)args.cc 1.3 06/12/12
- */
 
-#pragma	ident	"@(#)args.cc	1.3	06/12/12"
+#include <sys/types.h>
+#include <sys/stat.h>
+
+extern int mkdir(const char *path, mode_t mode);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-union Args	vroot_args;
-int		vroot_result;
+static int	mkdir_thunk(char *path)
+{
+	vroot_result= mkdir(path, vroot_args.mkdir.mode);
+	return(vroot_result == 0);
+}
+
+int	mkdir_vroot(char *path, int mode, pathpt vroot_path, pathpt vroot_vroot)
+{
+	vroot_args.mkdir.mode= mode;
+	translate_with_thunk(path, mkdir_thunk, vroot_path, vroot_vroot, rw_write);
+	return(vroot_result);
+}

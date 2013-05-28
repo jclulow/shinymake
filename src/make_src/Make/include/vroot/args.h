@@ -22,11 +22,6 @@
  * Copyright 1999 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)args.h 1.7 06/12/12
- */
-
-#pragma	ident	"@(#)args.h	1.7	06/12/12"
 
 #ifndef _ARGS_H_
 #define _ARGS_H_
@@ -57,9 +52,6 @@ union Args {
 	struct { int flags; int mode;} open;
 	struct { char *buffer; int buffer_size;} readlink;
 	struct { struct stat *buffer;} stat;
-#ifndef SUN5_0
-	struct { struct statfs *buffer;} statfs;
-#endif
 	struct { int length;} truncate;
 	struct { struct timeval *time;} utimes;
 };
@@ -67,4 +59,4 @@ union Args {
 extern	union Args	vroot_args;
 extern	int		vroot_result;
 
-#endif
+#endif	/* _ARGS_H_ */

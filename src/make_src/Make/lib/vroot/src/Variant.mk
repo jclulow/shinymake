@@ -31,31 +31,31 @@ include $(TOP)/rules/dmake.mk
 PKG_TOP =	$(TOP)/Make
 CPPFLAGS +=	-I$(PKG_TOP)/include
 
-CCSRCS =	\
-		access.cc \
-		args.cc \
-		chdir.cc \
-		chmod.cc \
-		chown.cc \
-		chroot.cc \
-		creat.cc \
-		execve.cc \
-		lock.cc \
-		lstat.cc \
-		mkdir.cc \
-		mount.cc \
-		open.cc \
-		readlink.cc \
-		report.cc \
-		rmdir.cc \
-		stat.cc \
-		statfs.cc \
-		truncate.cc \
-		unlink.cc \
-		unmount.cc \
-		utimes.cc \
-		vroot.cc \
-		setenv.cc
+CSRCS =	\
+		access.c \
+		args.c \
+		chdir.c \
+		chmod.c \
+		chown.c \
+		chroot.c \
+		creat.c \
+		execve.c \
+		lock.c \
+		lstat.c \
+		mkdir.c \
+		mount.c \
+		open.c \
+		readlink.c \
+		report.c \
+		rmdir.c \
+		stat.c \
+		statfs.c \
+		truncate.c \
+		unlink.c \
+		unmount.c \
+		utimes.c \
+		vroot.c \
+		setenv.c
 
 
 HDRS_DIR =	$(PKG_TOP)/include/vroot

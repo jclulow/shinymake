@@ -22,28 +22,24 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)truncate.cc 1.4 06/12/12
- */
 
-#pragma	ident	"@(#)truncate.cc	1.4	06/12/12"
+#include <sys/types.h>
+#include <sys/time.h>
 
-#include <unistd.h>
-
-extern int truncate(const char *path, off_t length);
+extern int utimes(char *file, struct timeval *tvp);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	truncate_thunk(char *path)
+static int	utimes_thunk(char *path)
 {
-	vroot_result= truncate(path, vroot_args.truncate.length);
+	vroot_result= utimes(path, vroot_args.utimes.time);
 	return(vroot_result == 0);
 }
 
-int	truncate_vroot(char *path, int length, pathpt vroot_path, pathpt vroot_vroot)
+int	utimes_vroot(char *path, struct timeval *time, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.truncate.length= length;
-	translate_with_thunk(path, truncate_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.utimes.time= time;
+	translate_with_thunk(path, utimes_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

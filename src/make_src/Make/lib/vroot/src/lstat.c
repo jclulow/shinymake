@@ -19,32 +19,27 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
+ * Copyright 1998 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)readlink.cc 1.4 06/12/12
- */
 
-#pragma	ident	"@(#)readlink.cc	1.4	06/12/12"
+#include <sys/types.h>
+#include <sys/stat.h>
 
-#include <unistd.h>
-
-extern int readlink(const char *path, void *buf, size_t bufsiz);
+extern int lstat(const char *path, struct stat *buf);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	readlink_thunk(char *path)
+static int	lstat_thunk(char *path)
 {
-	vroot_result= readlink(path, vroot_args.readlink.buffer, vroot_args.readlink.buffer_size);
-	return(vroot_result >= 0);
+	vroot_result= lstat(path, vroot_args.lstat.buffer);
+	return(vroot_result == 0);
 }
 
-int	readlink_vroot(char *path, char *buffer, int buffer_size, pathpt vroot_path, pathpt vroot_vroot)
+int	lstat_vroot(char *path, struct stat *buffer, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.readlink.buffer= buffer;
-	vroot_args.readlink.buffer_size= buffer_size;
-	translate_with_thunk(path, readlink_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.lstat.buffer= buffer;
+	translate_with_thunk(path, lstat_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

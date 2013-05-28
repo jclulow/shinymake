@@ -19,35 +19,25 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 1995 Sun Microsystems, Inc. All rights reserved.
+ * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)mount.cc 1.5 06/12/12
- */
 
-#pragma	ident	"@(#)mount.cc	1.5	06/12/12"
+#include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/mount.h>
-
-#ifndef HP_UX
-extern int mount(const char *spec, const char *dir, int mflag, ...);
-#endif
+extern int chroot(const char *path);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	mount_thunk(char *path)
+static int	chroot_thunk(char *path)
 {
-	vroot_result= mount(path, vroot_args.mount.name, vroot_args.mount.mode);
+	vroot_result= chroot(path);
 	return(vroot_result == 0);
 }
 
-int	mount_vroot(char *target, char *name, int mode, pathpt vroot_path, pathpt vroot_vroot)
+int	chroot_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.mount.name= name;
-	vroot_args.mount.mode= mode;
-	translate_with_thunk(target, mount_thunk, vroot_path, vroot_vroot, rw_read);
+	translate_with_thunk(path, chroot_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

@@ -22,27 +22,22 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)unmount.cc 1.5 06/12/12
- */
 
-#pragma	ident	"@(#)unmount.cc	1.5	06/12/12"
+#include <unistd.h>
 
-#ifndef SUN5_0
+extern int rmdir(const char *path);
+
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-extern int	unmount(char *name);
-
-static int	unmount_thunk(char *path)
+static int	rmdir_thunk(char *path)
 {
-	vroot_result= unmount(path);
+	vroot_result= rmdir(path);
 	return(vroot_result == 0);
 }
 
-int	unmount_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
+int	rmdir_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
 {
-	translate_with_thunk(path, unmount_thunk, vroot_path, vroot_vroot, rw_read);
+	translate_with_thunk(path, rmdir_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }
-#endif

@@ -22,32 +22,25 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)open.cc 1.4 06/12/12
- */
 
-#pragma	ident	"@(#)open.cc	1.4	06/12/12"
-
+#include <unistd.h>
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
-extern int open(const char *path, int oflag, ...);
+extern int chown(const char *path, uid_t owner, gid_t group);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	open_thunk(char *path)
+static int	chown_thunk(char *path)
 {
-	vroot_result= open(path, vroot_args.open.flags, vroot_args.open.mode);
-	return(vroot_result >= 0);
+	vroot_result= chown(path, vroot_args.chown.user, vroot_args.chown.group);
+	return(vroot_result == 0);
 }
 
-int	open_vroot(char *path, int flags, int mode, pathpt vroot_path, pathpt vroot_vroot)
+int	chown_vroot(char *path, int user, int group, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.open.flags= flags;
-	vroot_args.open.mode= mode;
-	translate_with_thunk(path, open_thunk, vroot_path, vroot_vroot,
-				((flags & (O_CREAT|O_APPEND)) != 0) ? rw_write : rw_read);
+	vroot_args.chown.user= user;
+	vroot_args.chown.group= group;
+	translate_with_thunk(path, chown_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

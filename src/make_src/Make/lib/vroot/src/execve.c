@@ -19,32 +19,31 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 1998 Sun Microsystems, Inc. All rights reserved.
+ * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)stat.cc 1.6 06/12/12
- */
 
-#pragma	ident	"@(#)stat.cc	1.6	06/12/12"
+#include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-
-extern int stat(const char *path, struct stat *buf);
+extern int execve (const char *path, char *const argv[], char *const envp[]);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	stat_thunk(char *path)
+static int	execve_thunk(char *path)
 {
-	vroot_result= stat(path, vroot_args.stat.buffer);
-	return(vroot_result == 0);
+	execve(path, vroot_args.execve.argv, vroot_args.execve.environ);
+	switch (errno) {
+		case ETXTBSY:
+		case ENOEXEC: return 1;
+		default: return 0;
+	}
 }
 
-int	stat_vroot(char *path, struct stat *buffer, pathpt vroot_path, pathpt vroot_vroot)
+int	execve_vroot(char *path, char **argv, char **environ, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.stat.buffer= buffer;
-	translate_with_thunk(path, stat_thunk, vroot_path, vroot_vroot, rw_read);
-	return(vroot_result);
+	vroot_args.execve.argv= argv;
+	vroot_args.execve.environ= environ;
+	translate_with_thunk(path, execve_thunk, vroot_path, vroot_vroot, rw_read);
+	return(-1);
 }

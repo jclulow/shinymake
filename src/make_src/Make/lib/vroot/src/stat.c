@@ -19,31 +19,27 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
+ * Copyright 1998 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)statfs.cc 1.5 06/12/12
- */
 
-#pragma	ident	"@(#)statfs.cc	1.5	06/12/12"
+#include <sys/types.h>
+#include <sys/stat.h>
 
-#ifndef SUN5_0
+extern int stat(const char *path, struct stat *buf);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
-#include <sys/vfs.h>
 
-static int	statfs_thunk(char *path)
+static int	stat_thunk(char *path)
 {
-	vroot_result= statfs(path, vroot_args.statfs.buffer);
+	vroot_result= stat(path, vroot_args.stat.buffer);
 	return(vroot_result == 0);
 }
 
-int	statfs_vroot(char *path, struct statfs *buffer, pathpt vroot_path, pathpt vroot_vroot)
+int	stat_vroot(char *path, struct stat *buffer, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.statfs.buffer= buffer;
-	translate_with_thunk(path, statfs_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.stat.buffer= buffer;
+	translate_with_thunk(path, stat_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }
-#endif

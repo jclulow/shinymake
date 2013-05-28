@@ -22,33 +22,22 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)execve.cc 1.4 06/12/12
- */
-
-#pragma	ident	"@(#)execve.cc	1.4	06/12/12"
 
 #include <unistd.h>
 
-extern int execve (const char *path, char *const argv[], char *const envp[]);
+extern int unlink(const char *path);
 
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	execve_thunk(char *path)
+static int	unlink_thunk(char *path)
 {
-	execve(path, vroot_args.execve.argv, vroot_args.execve.environ);
-	switch (errno) {
-		case ETXTBSY:
-		case ENOEXEC: return 1;
-		default: return 0;
-	}
+	vroot_result= unlink(path);
+	return(vroot_result == 0);
 }
 
-int	execve_vroot(char *path, char **argv, char **environ, pathpt vroot_path, pathpt vroot_vroot)
+int	unlink_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
 {
-	vroot_args.execve.argv= argv;
-	vroot_args.execve.environ= environ;
-	translate_with_thunk(path, execve_thunk, vroot_path, vroot_vroot, rw_read);
-	return(-1);
+	translate_with_thunk(path, unlink_thunk, vroot_path, vroot_vroot, rw_read);
+	return(vroot_result);
 }

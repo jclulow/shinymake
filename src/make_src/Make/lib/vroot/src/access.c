@@ -22,24 +22,20 @@
  * Copyright 1993 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)chdir.cc 1.4 06/12/12
- */
-
-#pragma	ident	"@(#)chdir.cc	1.4	06/12/12"
 
 #include <unistd.h>
 #include <vroot/vroot.h>
 #include <vroot/args.h>
 
-static int	chdir_thunk(char *path)
+static int	access_thunk(char *path)
 {
-	vroot_result= chdir(path);
-	return(vroot_result == 0);
+	vroot_result= access(path, vroot_args.access.mode);
+	return((vroot_result == 0) || (errno != ENOENT));
 }
 
-int	chdir_vroot(char *path, pathpt vroot_path, pathpt vroot_vroot)
+int	access_vroot(char *path, int mode, pathpt vroot_path, pathpt vroot_vroot)
 {
-	translate_with_thunk(path, chdir_thunk, vroot_path, vroot_vroot, rw_read);
+	vroot_args.access.mode= mode;
+	translate_with_thunk(path, access_thunk, vroot_path, vroot_vroot, rw_read);
 	return(vroot_result);
 }

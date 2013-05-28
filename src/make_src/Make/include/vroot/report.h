@@ -22,11 +22,6 @@
  * Copyright 1994 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)report.h 1.6 06/12/12
- */
-
-#pragma	ident	"@(#)report.h	1.6	06/12/12"
 
 #ifndef _REPORT_H_
 #define _REPORT_H_
@@ -37,9 +32,6 @@ extern FILE	*get_report_file(void);
 extern char	*get_target_being_reported_for(void);
 extern void	report_dependency(register char *name);
 extern int	file_lock(char *name, char *lockname, int *file_locked, int timeout);
-#ifdef NSE
-extern char	*setenv(char *name, char *value);
-#endif
 
 #define SUNPRO_DEPENDENCIES "SUNPRO_DEPENDENCIES"
 #define LD 	"LD"
@@ -47,7 +39,9 @@ extern char	*setenv(char *name, char *value);
 
 /* the following definitions define the interface between make and
  * NSE - the two systems must track each other.
+ * XXX - THERE IS NO NSE; ONLY ZUUL
  */
+#if 0
 #define NSE_DEPINFO 		".nse_depinfo"
 #define NSE_DEPINFO_LOCK 	".nse_depinfo.lock"
 #define NSE_DEP_ENV 		"NSE_DEP"
@@ -55,5 +49,6 @@ extern char	*setenv(char *name, char *value);
 #define NSE_TFS_PUSH_LEN 	8
 #define NSE_VARIANT_ENV 	"NSE_VARIANT"
 #define NSE_RT_SOURCE_NAME 	"Shared_Source"
-
 #endif
+
+#endif	/* _REPORT_H_ */
