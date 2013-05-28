@@ -22,11 +22,6 @@
  * Copyright 2004 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)read.cc 1.11 06/12/12
- */
-
-#pragma	ident	"@(#)read.cc	1.11	06/12/12"
 
 /*
  *	read.c
@@ -37,13 +32,15 @@
 /*
  * Included files
  */
-#include <mksh/misc.h>		/* retmem() */
+#include <mksh/misc.h>
 #include <mksh/read.h>
 #include <mksdmsi18n/mksdmsi18n.h>
-#include <sys/uio.h>		/* read() */
-#include <unistd.h>		/* close(), unlink(), read() */
+#include <sys/uio.h>
+#include <unistd.h>
 
 #define	STRING_LEN_TO_CONVERT	(8*1024)
+
+boolean_t make_state_locked;
 
 /*
  *	get_next_block_fn(source)
@@ -61,112 +58,116 @@
  *	Global variables used:
  *		file_being_read	The name of the current file, error msg
  */
-Boolean		make_state_locked;
-Source
-get_next_block_fn(register Source source)
+source_t *
+get_next_block_fn(source_t *src)
 {
-	register off_t		to_read;
-	register int		length;
-	register size_t		num_wc_chars;
-	char			ch_save;
-	char			*ptr;
+	size_t num_wc_chars;
+	char *ptr;
 
-	if (source == NULL) {
-		return NULL;
+	if (src == NULL) {
+		return (NULL);
 	}
-	if ((source->fd < 0) ||
-		((source->bytes_left_in_file <= 0) &&
-			(source->inp_buf_ptr >= source->inp_buf_end))) {
-		/* We can't read from the makefile, so pop the source block */
-		if (source->fd > 2) {
-			(void) close(source->fd);
+	if ((src->src_fd == -1) || ((src->src_bytes_left_in_file <= 0) &&
+	    (src->src_inp_buf_ptr >= src->src_inp_buf_end))) {
+		/*
+		 * We can't read from the makefile, so pop the source block.
+		 */
+		if (src->src_fd > 2) {
+			(void) close(src->src_fd);
 			if (make_state_lockfile != NULL) {
 				(void) unlink(make_state_lockfile);
-				retmem_mb(make_state_lockfile);
+				free(make_state_lockfile);
 				make_state_lockfile = NULL;
-				make_state_locked = false;
+				make_state_locked = B_FALSE;
 			}
 		}
-		if (source->string.free_after_use &&
-		    (source->string.buffer.start != NULL)) {
-			retmem(source->string.buffer.start);
-			source->string.buffer.start = NULL;
+
+		if (src->src_str.str_free_after_use == B_TRUE &&
+		    (src->src_str.str_buf_start != NULL)) {
+			free(src->src_str.str_buf_start);
+			src->src_str.str_buf_start = NULL;
 		}
-		if (source->inp_buf != NULL) {
-			retmem_mb(source->inp_buf);
-			source->inp_buf = NULL;
+		if (src->src_inp_buf != NULL) {
+			free(src->src_inp_buf);
+			src->src_inp_buf = NULL;
+			src->src_inp_buf_ptr = NULL;
+			src->src_inp_buf_end = NULL;
 		}
-		source = source->previous;
-		if (source != NULL) {
-			source->error_converting = false;
+		src = src->src_prev;
+		if (src != NULL) {
+			src->src_error_converting = B_FALSE;
 		}
-		return source;
+		return (src);
 	}
-	if (source->bytes_left_in_file > 0) {
-	/*
-	 * Read the whole makefile.
-	 * Hopefully the kernel managed to prefetch the stuff.
-	 */
-		to_read = source->bytes_left_in_file;
-	 	source->inp_buf_ptr = source->inp_buf = getmem(to_read + 1);
-		source->inp_buf_end = source->inp_buf + to_read;
-		length = read(source->fd, source->inp_buf, (unsigned int) to_read);
+	if (src->src_bytes_left_in_file > 0) {
+		size_t length;
+		size_t to_read = src->src_bytes_left_in_file;
+		/*
+		 * Read the whole makefile.
+		 * Hopefully the kernel managed to prefetch the stuff.
+		 */
+	 	src->src_inp_buf_ptr = src->src_inp_buf = xmalloc(to_read + 1);
+		src->src_inp_buf_end = src->src_inp_buf + to_read;
+
+		length = read(src->src_fd, src->src_inp_buf, to_read);
 		if (length != to_read) {
-			WCSTOMBS(mbs_buffer, file_being_read);
 			if (length == 0) {
-				fatal_mksh(catgets(libmksdmsi18n_catd, 1, 140, "Error reading `%s': Premature EOF"),
-				      mbs_buffer);
+				fatal_mksh(catgets(libmksdmsi18n_catd, 1, 140,
+				    "Error reading `%ls': Premature EOF"),
+				    file_being_read);
 			} else {
-				fatal_mksh(catgets(libmksdmsi18n_catd, 1, 141, "Error reading `%s': %s"),
-				      mbs_buffer,
-				      errmsg(errno));
+				fatal_mksh(catgets(libmksdmsi18n_catd, 1, 141,
+				    "Error reading `%s': %s"), file_being_read,
+				    errmsg(errno));
 			}
 		}
-		*source->inp_buf_end = nul_char;
-		source->bytes_left_in_file = 0;
+		*src->src_inp_buf_end = '\0';
+		src->src_bytes_left_in_file = 0;
 	}
 	/*
 	 * Try to convert the next piece.
 	 */
-	ptr = source->inp_buf_ptr + STRING_LEN_TO_CONVERT;
-	if (ptr > source->inp_buf_end) {
-		ptr = source->inp_buf_end;
+	ptr = src->src_inp_buf_ptr + STRING_LEN_TO_CONVERT;
+	if (ptr > src->src_inp_buf_end) {
+		ptr = src->src_inp_buf_end;
 	}
-	for (num_wc_chars = 0; ptr > source->inp_buf_ptr; ptr--) {
-		ch_save = *ptr;
-		*ptr = nul_char;
-		num_wc_chars = mbstowcs(source->string.text.end,
-					source->inp_buf_ptr,
-					STRING_LEN_TO_CONVERT);
+	for (num_wc_chars = 0; ptr > src->src_inp_buf_ptr; ptr--) {
+		char ch_save = *ptr;
+		*ptr = '\0';
+		num_wc_chars = mbstowcs(src->src_str.str_end,
+		    src->src_inp_buf_ptr, STRING_LEN_TO_CONVERT);
 		*ptr = ch_save;
 		if (num_wc_chars != (size_t)-1) {
 			break;
 		}
 	}
 
-	if ((int) num_wc_chars == (size_t)-1) {
-		source->error_converting = true;
-		return source;
+	if (num_wc_chars == (size_t)-1) {
+		src->src_error_converting = B_TRUE;
+		return (src);
 	}
 
-	source->error_converting = false;
-	source->inp_buf_ptr = ptr;
-	source->string.text.end += num_wc_chars;
-	*source->string.text.end = 0;
+	src->src_error_converting = B_FALSE;
+	src->src_inp_buf_ptr = ptr;
+	src->src_str.str_end += num_wc_chars;
+	*src->src_str.str_end = L'\0';
 
-	if (source->inp_buf_ptr >= source->inp_buf_end) {
-		if (*(source->string.text.end - 1) != (int) newline_char) {
-			WCSTOMBS(mbs_buffer, file_being_read);
-			warning_mksh(catgets(libmksdmsi18n_catd, 1, 142, "newline is not last character in file %s"),
-					     mbs_buffer);
-			*source->string.text.end++ = (int) newline_char;
-			*source->string.text.end = (int) nul_char;
-			*source->string.buffer.end++;
+	if (src->src_inp_buf_ptr >= src->src_inp_buf_end) {
+		if (*(src->src_str.str_end - 1) != L'\n') {
+			warning_mksh(catgets(libmksdmsi18n_catd, 1, 142,
+			    "newline is not last character in file %ls"),
+			    file_being_read);
+			*src->src_str.str_end++ = L'\n';
+			*src->src_str.str_end = L'\0';
+			/*
+			 * XXX this seems dubious:
+			 */
+			src->src_str.str_buf_end++;
 		}
-		if (source->inp_buf != NULL) {
-			retmem_mb(source->inp_buf);
-			source->inp_buf = NULL;
+		if (src->src_inp_buf != NULL) {
+			free(src->src_inp_buf);
+			src->src_inp_buf = NULL;
 		}
 	}
-	return source;
+	return (src);
 }

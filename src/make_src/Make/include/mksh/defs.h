@@ -171,8 +171,6 @@ enum {
 #define WCTOMB(a,b)		(void) wctomb((a), (b))
 #define	HASH(v, c)		(v = (v)*31 + (unsigned int)(c))
 
-#define	WCNUL			(wchar_t)0
-
 extern void mbstowcs_with_check(wchar_t *pwcs, const char *s, size_t n);
 
 
@@ -275,9 +273,9 @@ extern const timestruc_t file_max_time;
  *	extern declarations for all global variables.
  *	The actual declarations are in globals.cc
  */
-extern char		char_semantics[];
+extern char_class_t	char_semantics[];
 extern wchar_t		char_semantics_char[];
-extern macro_list_t	cond_macro_list;
+extern macro_list_t	*cond_macro_list;
 extern boolean_t	conditional_macro_used;
 extern boolean_t	do_not_exec_rule;		/* `-n' */
 extern boolean_t	dollarget_seen;
@@ -298,15 +296,15 @@ extern boolean_t	make_word_mentioned;
 extern makefile_type_t	makefile_type;
 extern char		mbs_buffer[];
 extern boolean_t	posix;
-extern name_t		*query;
 extern boolean_t	query_mentioned;
-extern name_t		*hat;
 extern boolean_t	reading_environment;
 extern boolean_t	svr4;
 extern boolean_t	tilde_rule;
 extern wchar_t		wcs_buffer[];
 extern boolean_t	working_on_targets;
 #if 0
+extern name_t		*query;
+extern name_t		*hat;
 extern name_t		*virtual_root;
 extern name_t		*path_name;
 extern boolean_t	vpath_defined;
@@ -336,6 +334,9 @@ typedef enum magic_macro_id {
 	MMI_PATH,
 	MMI_VPATH,
 	MMI_VIRTUAL_ROOT,
+	MMI_MAKE,
+	MMI_QUERY,
+	MMI_HAT,
 	_MMI_MAX_ID
 } magic_macro_id_t;
 extern name_t *magic_macros[];

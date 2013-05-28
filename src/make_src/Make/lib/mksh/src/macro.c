@@ -29,32 +29,66 @@
  *	Handle expansion of make macros
  */
 
-/*
- * Included files
- */
-#include <mksh/dosys.h>		/* sh_command2string() */
-#include <mksh/i18n.h>		/* get_char_semantics_value() */
+#include <strings.h>
+#include <mksh/dosys.h>
+#include <mksh/i18n.h>
 #include <mksh/macro.h>
-#include <mksh/misc.h>		/* retmem() */
-#include <mksh/read.h>		/* get_next_block_fn() */
-#include <mksdmsi18n/mksdmsi18n.h>	/* libmksdmsi18n_init() */
+#include <mksh/misc.h>
+#include <mksh/read.h>
+#include <mksdmsi18n/mksdmsi18n.h>
 
-/*
- * File table of contents
- */
-static void	add_macro_to_global_list(Name macro_to_add);
-#ifdef NSE
-static void	expand_value_with_daemon(Name name, register Property macro, register String destination, Boolean cmd);
-#else
-static void	expand_value_with_daemon(Name, register Property macro, register String destination, Boolean cmd);
-#endif
 
+static void add_macro_to_global_list(name_t *);
+static void expand_value_with_daemon(name_t *, macro_t *, string_t *,
+    boolean_t);
+
+static void _get_macro_value(name_t *, string_t *, replacement_t *,
+    extraction_type_t, boolean_t);
+static void _process_macro_name(string_t *, string_t *, boolean_t);
+static void _extract_string(extraction_type_t, wchar_t *, string_t *);
+static void _replace_string(replacement_t *, string_t *, string_t *);
 
 static boolean_t init_arch_done = B_FALSE;
 static boolean_t init_mach_done = B_FALSE;
 
 static void init_arch_macros(void);
 static void init_mach_macros(void);
+
+static const wchar_t *macro_names[] = {
+	L"HOST_ARCH",		/* MMI_HOST_ARCH */
+	L"HOST_MACH",		/* MMI_HOST_MACH */
+	L"TARGET_ARCH",		/* MMI_TARGET_ARCH */
+	L"TARGET_MACH",		/* MMI_TARGET_MACH */
+	L"SHELL",		/* MMI_SHELL */
+	L"PATH",		/* MMI_PATH */
+	L"VPATH",		/* MMI_VPATH */
+	L"VIRTUAL_ROOT",	/* MMI_VIRTUAL_ROOT */
+	L"MAKE",		/* MMI_MAKE */
+	L"?",			/* MMI_QUERY */
+	L"^"			/* MMI_HAT */
+};
+
+static name_t *
+_internal_get_magic_macro(magic_macro_id_t id)
+{
+	if (id == MMI_UNKNOWN || id >= _MMI_MAX_ID) {
+		fprintf(stderr, "PROGRAMMING ERROR\n");
+		/*
+		 * XXX
+		 */
+		abort();
+	}
+
+	if (magic_macros[id - 1] == NULL) {
+		/*
+		 * Internalise the name:
+		 */
+		magic_macros[id - 1] = GETNAME(macro_names[id - 1],
+		    FIND_LENGTH);
+	}
+
+	return (magic_macros[id - 1]);
+}
 
 /*
  * Check if this is a particular magic macro, but don't trigger the
@@ -63,33 +97,16 @@ static void init_mach_macros(void);
 boolean_t
 is_magic_macro_name(magic_macro_id_t id, name_t *n)
 {
-	name_t *xx;
+	if (n == NULL || _internal_get_magic_macro(id) != n)
+		return (B_FALSE);
 
-	if (id == MMI_UNKNOWN || id >= _MMI_MAX_ID) {
-		fprintf(stderr, "PROGRAMMING ERROR\n");
-		/*
-		 * XXX
-		 */
-		abort();
-	}
-
-	xx = magic_macros[id - 1];
-	if (xx != NULL && xx == n)
-		return (B_TRUE);
-
-	return (B_FALSE);
+	return (B_TRUE);
 }
 
 name_t *
 get_magic_macro(magic_macro_id_t id)
 {
-	if (id == MMI_UNKNOWN || id >= _MMI_MAX_ID) {
-		fprintf(stderr, "PROGRAMMING ERROR\n");
-		/*
-		 * XXX
-		 */
-		abort();
-	}
+	name_t *xx = _internal_get_magic_macro(id);
 
 	/*
 	 * Ensure we have done the appropriate initialisation:
@@ -97,24 +114,12 @@ get_magic_macro(magic_macro_id_t id)
 	switch (id) {
 	case MMI_HOST_ARCH:
 	case MMI_TARGET_ARCH:
-		if (init_arch_done != B_TRUE)
-			init_arch_macros();
-		init_arch_done = B_TRUE;
+		init_arch_macros();
 		break;
 	case MMI_HOST_MACH:
 	case MMI_TARGET_MACH:
-		if (init_mach_done != B_TRUE)
-			init_mach_macros();
-		init_mach_done = B_TRUE;
+		init_mach_macros();
 		break;
-	case MMI_SHELL:
-		if (magic_macros[id - 1] == NULL) {
-			/*
-			 * XXX
-			 */
-			fprintf(stderr, "SHELL UNSET AT THIS STAGE\n");
-			abort();
-		}
 	default:
 		break;
 	}
@@ -122,12 +127,9 @@ get_magic_macro(magic_macro_id_t id)
 	/*
 	 * Now, return the requisite thing:
 	 */
-	return (magic_macros[id - 1]);
+	return (xx);
 }
 
-
-long env_alloc_num = 0;
-long env_alloc_bytes = 0;
 
 /*
  *	getvar(name)
@@ -153,11 +155,11 @@ getvar(name_t *name)
 
 	INIT_STRING_FROM_STACK(dest, buf);
 
-	prop = maybe_append_prop(name, macro_prop);
+	prop = maybe_append_prop(name, PT_MACRO);
 	if (prop->p_type != PT_MACRO)
 		abort();
 	macro = (macro_t *)prop->p_body;
-	expand_value(macro->m_value, &destination, B_FALSE);
+	expand_value(macro->m_value, &dest, B_FALSE);
 
 	result = GETNAME(dest.str_buf_start, FIND_LENGTH);
 	if (dest.str_free_after_use)
@@ -181,119 +183,232 @@ getvar(name_t *name)
  *	Global variables used:
  */
 void
-expand_value(Name value, register String destination, Boolean cmd)
+expand_value(name_t *value, string_t *destination, boolean_t cmd)
 {
-	Source_rec		sourceb;
-	register Source		source = &sourceb;
-	register wchar_t	*source_p = NULL;
-	register wchar_t	*source_end = NULL;
-	wchar_t			*block_start = NULL;
-	int			quote_seen = 0;
+	source_t *src;
+	wchar_t *block_start;
+	boolean_t quote_seen = B_FALSE;
 
 	if (value == NULL) {
 		/*
 		 * Make sure to get a string allocated even if it
 		 * will be empty.
+		 * XXX this seems like it might be a misunderstanding
+		 * of the interface?  Surely we can guarantee that
+		 * every string_t is allocated correctly...
 		 */
-		MBSTOWCS(wcs_buffer, "");
-		append_string(wcs_buffer, destination, FIND_LENGTH);
-		destination->text.end = destination->text.p;
+		append_string_wide(L"", destination, FIND_LENGTH);
+		destination->str_end = destination->str_p;
 		return;
 	}
-	if (!value->dollar) {
+	if (value->n_dollar == B_FALSE) {
 		/*
 		 * If the value we are expanding does not contain
 		 * any $, we don't have to parse it.
 		 */
-		APPEND_NAME(value,
-			destination,
-			(int) value->hash.length
-		);
-		destination->text.end = destination->text.p;
+		append_string_name(value, destination);
+		destination->str_end = destination->str_p;
 		return;
 	}
 
-	if (value->being_expanded) {
-		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 113, "Loop detected when expanding macro value `%s'"),
-			     value->string_mb);
+	if (value->n_being_expanded == B_TRUE) {
+		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 113,
+		    "Loop detected when expanding macro value `%ls'"),
+		    value->n_key);
 	}
-	value->being_expanded = true;
-	/* Setup the structure we read from */
-	Wstring vals(value);
-	sourceb.string.text.p = sourceb.string.buffer.start = wsdup(vals.get_string());
-	sourceb.string.free_after_use = true;
-	sourceb.string.text.end =
-	  sourceb.string.buffer.end =
-	    sourceb.string.text.p + value->hash.length;
-	sourceb.previous = NULL;
-	sourceb.fd = -1;
-	sourceb.inp_buf =
-	  sourceb.inp_buf_ptr =
-	    sourceb.inp_buf_end = NULL;
-	sourceb.error_converting = false;
-	/* Lift some pointers from the struct to local register variables */
-	CACHE_SOURCE(0);
-/* We parse the string in segments */
-/* We read chars until we find a $, then we append what we have read so far */
-/* (since last $ processing) to the destination. When we find a $ we call */
-/* expand_macro() and let it expand that particular $ reference into dest */
-	block_start = source_p;
-	quote_seen = 0;
-	for (; 1; source_p++) {
-		switch (GET_CHAR()) {
-		case backslash_char:
+	value->n_being_expanded = B_TRUE;
+
+	src = source_from_wchar(value->n_key);
+
+	/*
+	 * We parse the string in segments.
+	 * We read characters until we find a $, then we append what we have
+	 * read so far (since last $ processing) to the destination.  When
+	 * we find a '$', we call expand_macro() and let it expand that
+	 * particular $ reference into destination.
+	 */
+	quote_seen = B_FALSE;
+	block_start = src->src_str.str_p;
+	for (;; (void) source_popchar(src)) {
+		switch (source_peekchar(src)) {
+		case L'\\':
 			/* Quote $ in macro value */
-			if (!cmd) {
-				quote_seen = ~quote_seen;
+			if (cmd == B_FALSE) {
+				quote_seen = quote_seen == B_TRUE ? B_FALSE :
+				    B_TRUE;
 			}
 			continue;
-		case dollar_char:
+		case L'$':
 			/* Save the plain string we found since */
 			/* start of string or previous $ */
-			if (quote_seen) {
-				append_string(block_start,
-					      destination,
-					      source_p - block_start - 1);
-				block_start = source_p;
+			if (quote_seen == B_TRUE) {
+				append_string_wide(block_start, destination,
+				    src->src_str.str_p - block_start - 1);
+				block_start = src->src_str.str_p;
 				break;
 			}
-			append_string(block_start,
-				      destination,
-				      source_p - block_start);
-			source->string.text.p = ++source_p;
-			UNCACHE_SOURCE();
-			/* Go expand the macro reference */
-			expand_macro(source, destination, sourceb.string.buffer.start, cmd);
-			CACHE_SOURCE(1);
-			block_start = source_p + 1;
+			append_string_wide(block_start, destination,
+			    src->src_str.str_p - block_start);
+			/*
+			 * Move past the $ for this macro, and expand
+			 * the reference:
+			 */
+			(void) source_popchar(src);
+			expand_macro(src, destination,
+			    src->src_str.str_buf_start, cmd);
+			block_start = src->src_str.str_p + 1;
 			break;
-		case nul_char:
+		case L'\0':
 			/* The string ran out. Get some more */
-			append_string(block_start,
-				      destination,
-				      source_p - block_start);
-			GET_NEXT_BLOCK_NOCHK(source);
-			if (source == NULL) {
-				destination->text.end = destination->text.p;
-				value->being_expanded = false;
+			append_string_wide(block_start, destination,
+			    src->src_str.str_p - block_start);
+
+			src = get_next_block_fn(src);
+			if (src == NULL) {
+				/*
+				 * We're done.
+				 */
+				destination->str_end = destination->str_p;
+				value->n_being_expanded = B_FALSE;
 				return;
 			}
-			if (source->error_converting) {
-				fatal_reader_mksh(NOCATGETS("Internal error: Invalid byte sequence in expand_value()"));
+			if (src->src_error_converting == B_TRUE) {
+				fatal_reader_mksh(NOCATGETS("Internal error: "
+				    "Invalid byte sequence in expand_value()"));
 			}
-			block_start = source_p;
-			source_p--;
+			block_start = src->src_str.str_p;
+			src->src_str.str_p--; /* because we're about to pop */
 			continue;
 		}
-		quote_seen = 0;
+		quote_seen = B_FALSE;
 	}
-	retmem(sourceb.string.buffer.start);
+#if 0
+out:
+	if (src->src_string.str_free_after_use == B_TRUE)
+		free(sourceb.src_string.str_buf_start);
+#endif
 }
+
+static void
+_parse_straight_subst(wchar_t *colon, replacement_t *rpl)
+{
+	wchar_t *eq = NULL;
+
+	while (colon != NULL) {
+		if ((eq = wcschr(colon + 1, L'=')) == NULL) {
+			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 120,
+			    "= missing from replacement macro reference"));
+		}
+		rpl->rpl_left_tail_len = eq - colon - 1;
+		free(rpl->rpl_left_tail);
+		rpl->rpl_left_tail = wchar_alloc(rpl->rpl_left_tail_len + 1);
+		(void) wsncpy(rpl->rpl_left_tail, colon + 1, eq - colon - 1);
+		rpl->rpl_left_tail[eq - colon - 1] = L'\0';
+
+		rpl->rpl_type = RT_SUFFIX;
+
+		if ((colon = wcschr(eq + 1, L':')) != NULL) {
+			rpl->rpl_right_tail_len = colon - eq;
+
+			free(rpl->rpl_right_tail);
+			rpl->rpl_right_tail = wchar_alloc(
+			    rpl->rpl_right_tail_len);
+			(void) wcsncpy(rpl->rpl_right_tail, eq + 1,
+			    colon - eq - 1);
+			rpl->rpl_right_tail[colon - eq - 1] = L'\0';
+		} else {
+			free(rpl->rpl_right_tail);
+			rpl->rpl_right_tail = wchar_alloc(wcslen(eq) + 1);
+			(void) wcscpy(rpl->rpl_right_tail, eq + 1);
+		}
+	}
+}
+
+static void
+_parse_percent_subst(wchar_t *colon, replacement_t *rpl)
+{
+	wchar_t *eq = NULL, *percent = NULL;
+
+	if ((eq = (wchar_t *) wcschr(colon + 1, L'=')) == NULL) {
+		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 121,
+		    "= missing from replacement macro reference"));
+	}
+
+	if ((percent = (wchar_t *) wcschr(colon + 1, L'%')) == NULL) {
+		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 122,
+		    "%% missing from replacement macro reference"));
+	}
+
+	if (eq < percent) {
+		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 123,
+		    "%% missing from replacement macro reference"));
+	}
+
+	free(rpl->rpl_left_head);
+	if (percent > (colon + 1)) {
+		int tmp_len = percent - colon;
+
+		rpl->rpl_left_head = wchar_alloc(tmp_len);
+		(void) wcsncpy(rpl->rpl_left_head, colon + 1,
+		    percent - colon - 1);
+		rpl->rpl_left_head[percent - colon - 1] = L'\0';
+		rpl->rpl_left_head_len = percent - colon - 1;
+	} else {
+		rpl->rpl_left_head = NULL;
+		rpl->rpl_left_head_len = 0;
+	}
+
+	free(rpl->rpl_left_tail);
+	if (eq > percent + 1) {
+		int tmp_len = eq - percent;
+
+		rpl->rpl_left_tail = wchar_alloc(tmp_len);
+		(void) wcsncpy(rpl->rpl_left_tail, percent + 1, eq - percent - 1);
+		rpl->rpl_left_tail[eq - percent - 1] = L'\0';
+		rpl->rpl_left_tail_len = eq - percent - 1;
+	} else {
+		rpl->rpl_left_tail = NULL;
+		rpl->rpl_left_tail_len = 0;
+	}
+
+	eq++;
+	if ((percent = wcschr(eq, L'%')) == NULL) {
+		rpl->rpl_right_hand[0] = wchar_alloc(wcslen(eq) + 1);
+		rpl->rpl_right_hand[1] = NULL;
+		(void) wcscpy(rpl->rpl_right_hand[0], eq);
+	} else {
+		int i = 0;
+		do {
+			rpl->rpl_right_hand[i] = wchar_alloc(percent - eq + 1);
+			(void) wsncpy(rpl->rpl_right_hand[i], eq, percent - eq);
+			rpl->rpl_right_hand[i][percent - eq] = L'\0';
+
+			if (i++ >= REPLACEMENT_RIGHT_HAND_SIZE) {
+				fatal_mksh(catgets(libmksdmsi18n_catd, 1, 124,
+				    "Too many %% in pattern"));
+			}
+
+			eq = percent + 1;
+			if (eq[0] == L'\0') {
+				rpl->rpl_right_hand[i] = xwcsdup(L"");
+				i++;
+				break;
+			}
+		} while ((percent = wcschr(eq, L'%')) != NULL);
+		if (eq[0] != (int) nul_char) {
+			rpl->rpl_right_hand[i] = xwcsdup(eq);
+			i++;
+		}
+		rpl->rpl_right_hand[i] = NULL;
+	}
+	rpl->rpl_type = RT_PATTERN;
+}
+
 
 /*
  *	expand_macro(source, destination, current_string, cmd)
  *
- *	Should be called with source->string.text.p pointing to
+ *	Should be called with src->src_str.str_p pointing to
  *	the first char after the $ that starts a macro reference.
  *	source->string.text.p is returned pointing to the first char after
  *	the macro name.
@@ -321,643 +436,580 @@ expand_value(Name value, register String destination, Boolean cmd)
  *		query		The Name "?", compared against
  *		query_mentioned	Set if the word "?" is mentioned
  */
+
 void
-expand_macro(register Source source, register String destination, wchar_t *current_string, Boolean cmd)
+expand_macro(source_t *src, string_t *destination, wchar_t *current_string,
+    boolean_t cmd)
 {
-	static Name		make = (Name)NULL;
-	static wchar_t		colon_sh[4];
-	static wchar_t		colon_shell[7];
-	String_rec		string;
-	wchar_t			buffer[STRING_BUFFER_LENGTH];
-	register wchar_t	*source_p = source->string.text.p;
-	register wchar_t	*source_end = source->string.text.end;
-	register int		closer = 0;
-	wchar_t			*block_start = (wchar_t *)NULL;
-	int			quote_seen = 0;
-	register int		closer_level = 1;
-	Name			name = (Name)NULL;
-	wchar_t			*colon = (wchar_t *)NULL;
-	wchar_t			*percent = (wchar_t *)NULL;
-	wchar_t			*eq = (wchar_t *) NULL;
-	Property		macro = NULL;
-	wchar_t			*p = (wchar_t*)NULL;
-	String_rec		extracted;
-	wchar_t			extracted_string[MAXPATHLEN];
-	wchar_t			*left_head = NULL;
-	wchar_t			*left_tail = NULL;
-	wchar_t			*right_tail = NULL;
-	int			left_head_len = 0;
-	int			left_tail_len = 0;
-	int			tmp_len = 0;
-	wchar_t			*right_hand[128];
-	int			i = 0;
-	enum {
-		no_extract,
-		dir_extract,
-		file_extract
-	}                       extraction = no_extract;
-	enum {
-		no_replace,
-		suffix_replace,
-		pattern_replace,
-		sh_replace
-	}			replacement = no_replace;
+	string_t str;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+	wchar_t closer = L'\0';
+	unsigned int closer_level = 0;
+	wchar_t *block_start;
+	boolean_t quote_seen;
 
-	if (make == NULL) {
-		MBSTOWCS(wcs_buffer, NOCATGETS("MAKE"));
-		make = GETNAME(wcs_buffer, FIND_LENGTH);
+	/*
+	 * First, we copy the (macro-expanded) macro name into string.
+	 */
+	INIT_STRING_FROM_STACK(str, buf);
 
-		MBSTOWCS(colon_sh, NOCATGETS(":sh"));
-		MBSTOWCS(colon_shell, NOCATGETS(":shell"));
-	}
-
-	right_hand[0] = NULL;
-
-	/* First copy the (macro-expanded) macro name into string. */
-	INIT_STRING_FROM_STACK(string, buffer);
 recheck_first_char:
-	/* Check the first char of the macro name to figure out what to do. */
-	switch (GET_CHAR()) {
-	case nul_char:
-		GET_NEXT_BLOCK_NOCHK(source);
-		if (source == NULL) {
-			WCSTOMBS(mbs_buffer, current_string);
-			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 114, "'$' at end of string `%s'"),
-				     mbs_buffer);
+	/*
+	 * Check the first char of the macro name to figure out what to do.
+	 */
+	switch (source_popchar(src)) {
+	case L'\0':
+		src = get_next_block_fn(src);
+		if (src == NULL) {
+			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 114,
+			    "'$' at end of string `%ls'"), current_string);
 		}
-		if (source->error_converting) {
-			fatal_reader_mksh(NOCATGETS("Internal error: Invalid byte sequence in expand_macro()"));
+		if (src->src_error_converting == B_TRUE) {
+			fatal_reader_mksh(NOCATGETS("Internal error: Invalid"
+			    " byte sequence in expand_macro()"));
 		}
 		goto recheck_first_char;
-	case parenleft_char:
-		/* Multi char name. */
-		closer = (int) parenright_char;
+	case L'(':
+		/*
+		 * Multi-character name.
+		 */
+		closer = L')';
 		break;
-	case braceleft_char:
-		/* Multi char name. */
-		closer = (int) braceright_char;
+	case L'{':
+		/*
+		 * Multi-character name.
+		 */
+		closer = L'}';
 		break;
-	case newline_char:
-		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 115, "'$' at end of line"));
+	case L'\n':
+		fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 115,
+		    "'$' at end of line"));
+		break;
 	default:
-		/* Single char macro name. Just suck it up */
-		append_char(*source_p, &string);
-		source->string.text.p = source_p + 1;
-		goto get_macro_value;
+		/*
+		 * Single-character macro name.  Just suck it up.
+		 */
+		append_char(*src->src_str.str_p, &str);
+		goto next_step;
 	}
 
-	/* Handle multi-char macro names */
-	block_start = ++source_p;
-	quote_seen = 0;
-	for (; 1; source_p++) {
-		switch (GET_CHAR()) {
-		case nul_char:
-			append_string(block_start,
-				      &string,
-				      source_p - block_start);
-			GET_NEXT_BLOCK_NOCHK(source);
-			if (source == NULL) {
+	/*
+	 * Handle multi-character macro names:
+	 */
+	block_start = src->src_str.str_p;
+	quote_seen = B_FALSE;
+	for (;; (void) source_popchar(src)) {
+		wchar_t c;
+		switch (c = source_peekchar(src)) {
+		case L'\0':
+			append_string_wide(block_start, &str,
+			    src->src_str.str_p - block_start);
+			src = get_next_block_fn(src);
+			if (src == NULL) {
 				if (current_string != NULL) {
-					WCSTOMBS(mbs_buffer, current_string);
-					fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 116, "Unmatched `%c' in string `%s'"),
-						     closer ==
-						     (int) braceright_char ?
-						     (int) braceleft_char :
-						     (int) parenleft_char,
-						     mbs_buffer);
+					fatal_reader_mksh(catgets(
+					    libmksdmsi18n_catd, 1, 116,
+					    "Unmatched `%lc' in string `%ls'"),
+					    closer == L'}' ? L'{' : L'(',
+					    current_string);
 				} else {
-					fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 117, "Premature EOF"));
+					fatal_reader_mksh(catgets(
+					    libmksdmsi18n_catd, 1, 117,
+					    "Premature EOF"));
 				}
 			}
-			if (source->error_converting) {
-				fatal_reader_mksh(NOCATGETS("Internal error: Invalid byte sequence in expand_macro()"));
+			if (src->src_error_converting == B_TRUE) {
+				fatal_reader_mksh(NOCATGETS("Internal error: "
+				    "Invalid byte sequence in expand_macro()"));
 			}
-			block_start = source_p;
-			source_p--;
+			block_start = src->src_str.str_p;
+			src->src_str.str_p--; /* because we're about to pop */
 			continue;
-		case newline_char:
-			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 118, "Unmatched `%c' on line"),
-				     closer == (int) braceright_char ?
-				     (int) braceleft_char :
-				     (int) parenleft_char);
-		case backslash_char:
-			/* Quote dollar in macro value. */
-			if (!cmd) {
-				quote_seen = ~quote_seen;
+		case L'\n':
+			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 118,
+			    "Unmatched `%lc' on line"),
+			    closer == L'}' ? L'{' : L'(');
+			break;
+		case L'\\':
+			/*
+			 * Quote '$' in macro value:
+			 */
+			if (cmd == B_FALSE) {
+				quote_seen = quote_seen == B_TRUE ? B_FALSE :
+				    B_TRUE;
 			}
 			continue;
-		case dollar_char:
+		case L'$':
 			/*
 			 * Macro names may reference macros.
 			 * This expands the value of such macros into the
 			 * macro name string.
 			 */
-			if (quote_seen) {
-				append_string(block_start,
-					      &string,
-					      source_p - block_start - 1);
-				block_start = source_p;
+			if (quote_seen == B_TRUE) {
+				append_string_wide(block_start, &str,
+				    src->src_str.str_p - block_start - 1);
+				block_start = src->src_str.str_p;
 				break;
 			}
-			append_string(block_start,
-				      &string,
-				      source_p - block_start);
-			source->string.text.p = ++source_p;
-			UNCACHE_SOURCE();
-			expand_macro(source, &string, current_string, cmd);
-			CACHE_SOURCE(0);
-			block_start = source_p;
-			source_p--;
-			break;
-		case parenleft_char:
-			/* Allow nested pairs of () in the macro name. */
-			if (closer == (int) parenright_char) {
-				closer_level++;
-			}
-			break;
-		case braceleft_char:
-			/* Allow nested pairs of {} in the macro name. */
-			if (closer == (int) braceright_char) {
-				closer_level++;
-			}
-			break;
-		case parenright_char:
-		case braceright_char:
+			append_string_wide(block_start, &str,
+			    src->src_str.str_p - block_start);
 			/*
-			 * End of the name. Save the string in the macro
+			 * Move past the $ for this macro, and expand
+			 * the reference:
+			 */
+			(void) source_popchar(src);
+			expand_macro(src, &str, current_string, cmd);
+			block_start = src->src_str.str_p;
+			src->src_str.str_p--; /* because about to pop */
+			break;
+		case L'(':
+			/*
+			 * Allow nested pairs of () in the macro name.
+			 */
+			if (closer == L')')
+				closer_level++;
+			break;
+		case L'{':
+			/*
+			 * Allow nested pairs of {} in the macro name.
+			 */
+			if (closer == L'}')
+				closer_level++;
+			break;
+		case L')':
+		case L'}':
+			/*
+			 * End of the name.  Save the string in the macro
 			 * name string.
 			 */
-			if ((*source_p == closer) && (--closer_level <= 0)) {
-				source->string.text.p = source_p + 1;
-				append_string(block_start,
-					      &string,
-					      source_p - block_start);
-				goto get_macro_value;
+			if (c == closer && --closer_level == 0) {
+				append_string_wide(block_start, &str,
+				    src->src_str.str_p - block_start);
+				/*
+				 * Discard the closer character, and get out:
+				 */
+				(void) source_popchar(src);
+				goto next_step;
 			}
 			break;
 		}
-		quote_seen = 0;
+		quote_seen = B_FALSE;
 	}
+
+next_step:
 	/*
-	 * We got the macro name. We now inspect it to see if it
-	 * specifies any translations of the value.
+	 * We have the macro name.  Inspect it to see if it specifies
+	 * any translations of the value.
 	 */
-get_macro_value:
-	name = NULL;
-	/* First check if we have a $(@D) type translation. */
-	if ((get_char_semantics_value(string.buffer.start[0]) &
-	     (int) special_macro_sem) &&
-	    (string.text.p - string.buffer.start >= 2) &&
-	    ((string.buffer.start[1] == 'D') ||
-	     (string.buffer.start[1] == 'F'))) {
-		switch (string.buffer.start[1]) {
-		case 'D':
-			extraction = dir_extract;
+	_process_macro_name(&str, destination, cmd);
+
+	if (str.str_free_after_use == B_TRUE)
+		free(str.str_buf_start);
+}
+
+static void
+_process_macro_name(string_t *str, string_t *dest, boolean_t cmd)
+{
+	const wchar_t *colon_sh = L":sh";
+	const wchar_t *colon_shell = L":shell";
+	extraction_type_t extraction = EXT_NO;
+	name_t *name = NULL;
+	wchar_t *colon, *percent;
+	replacement_t rpl;
+	int i;
+
+	bzero(&rpl, sizeof (rpl));
+
+	/*
+	 * First, check if we have a $(@D) type translation.
+	 */
+	if ((get_char_semantics_value(str->str_buf_start[0]) &
+	    CHC_SPECIAL_MACRO) != 0) {
+		switch (str->str_buf_start[1]) {
+		case L'D':
+			extraction = EXT_DIR;
 			break;
-		case 'F':
-			extraction = file_extract;
+		case L'F':
+			extraction = EXT_FILE;
 			break;
 		default:
-			WCSTOMBS(mbs_buffer, string.buffer.start);
-			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 119, "Illegal macro reference `%s'"),
-				     mbs_buffer);
+			fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 119,
+			    "Illegal macro reference `%ls'"),
+			    str->str_buf_start);
 		}
-		/* Internalize the macro name using the first char only. */
-		name = GETNAME(string.buffer.start, 1);
-		(void) wscpy(string.buffer.start, string.buffer.start + 2);
+		/*
+		 * Internalise the macro name using the first character
+		 * only:
+		 */
+		name = GETNAME(str->str_buf_start, 1);
+		/*
+		 * XXX this seems slightly dodge:
+		 */
+		(void) wcscpy(str->str_buf_start, str->str_buf_start + 2);
 	}
-	/* Check for other kinds of translations. */
-	if ((colon = (wchar_t *) wschr(string.buffer.start,
-				       (int) colon_char)) != NULL) {
+
+	/*
+	 * Check for other kinds of translations.
+	 */
+	if ((colon = wcschr(str->str_buf_start, L':')) != NULL) {
 		/*
 		 * We have a $(FOO:.c=.o) type translation.
 		 * Get the name of the macro proper.
 		 */
 		if (name == NULL) {
-			name = GETNAME(string.buffer.start,
-				       colon - string.buffer.start);
+			name = GETNAME(str->str_buf_start,
+			    colon - str->str_buf_start);
 		}
-		/* Pickup all the translations. */
-		if (IS_WEQUAL(colon, colon_sh) || IS_WEQUAL(colon, colon_shell)) {
-			replacement = sh_replace;
-		} else if ((svr4) ||
-		           ((percent = (wchar_t *) wschr(colon + 1,
-							 (int) percent_char)) == NULL)) {
-			while (colon != NULL) {
-				if ((eq = (wchar_t *) wschr(colon + 1,
-							    (int) equal_char)) == NULL) {
-					fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 120, "= missing from replacement macro reference"));
-				}
-				left_tail_len = eq - colon - 1;
-				if(left_tail) {
-					retmem(left_tail);
-				}
-				left_tail = ALLOC_WC(left_tail_len + 1);
-				(void) wsncpy(left_tail,
-					      colon + 1,
-					      eq - colon - 1);
-				left_tail[eq - colon - 1] = (int) nul_char;
-				replacement = suffix_replace;
-				if ((colon = (wchar_t *) wschr(eq + 1,
-							       (int) colon_char)) != NULL) {
-					tmp_len = colon - eq;
-					if(right_tail) {
-						retmem(right_tail);
-					}
-					right_tail = ALLOC_WC(tmp_len);
-					(void) wsncpy(right_tail,
-						      eq + 1,
-						      colon - eq - 1);
-					right_tail[colon - eq - 1] =
-					  (int) nul_char;
-				} else {
-					if(right_tail) {
-						retmem(right_tail);
-					}
-					right_tail = ALLOC_WC(wslen(eq) + 1);
-					(void) wscpy(right_tail, eq + 1);
-				}
-			}
+		/*
+		 * Pickup all the translations.
+		 */
+		if (wcscmp(colon, colon_sh) == 0 || wcscmp(colon,
+		    colon_shell) == 0) {
+			rpl.rpl_type = RT_SHELL;
+		} else if (svr4 == B_TRUE || (percent = wcschr(colon + 1,
+		    L'%')) == NULL) {
+			/*
+			 * Straight substition -- .c=.o
+			 */
+			_parse_straight_subst(colon, &rpl);
 		} else {
-			if ((eq = (wchar_t *) wschr(colon + 1,
-						    (int) equal_char)) == NULL) {
-				fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 121, "= missing from replacement macro reference"));
-			}
-			if ((percent = (wchar_t *) wschr(colon + 1,
-							 (int) percent_char)) == NULL) {
-				fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 122, "%% missing from replacement macro reference"));
-			}
-			if (eq < percent) {
-				fatal_reader_mksh(catgets(libmksdmsi18n_catd, 1, 123, "%% missing from replacement macro reference"));
-			}
-
-			if (percent > (colon + 1)) {
-				tmp_len = percent - colon;
-				if(left_head) {
-					retmem(left_head);
-				}
-				left_head = ALLOC_WC(tmp_len);
-				(void) wsncpy(left_head,
-					      colon + 1,
-					      percent - colon - 1);
-				left_head[percent-colon-1] = (int) nul_char;
-				left_head_len = percent-colon-1;
-			} else {
-				left_head = NULL;
-				left_head_len = 0;
-			}
-
-			if (eq > percent+1) {
-				tmp_len = eq - percent;
-				if(left_tail) {
-					retmem(left_tail);
-				}
-				left_tail = ALLOC_WC(tmp_len);
-				(void) wsncpy(left_tail,
-					      percent + 1,
-					      eq - percent - 1);
-				left_tail[eq-percent-1] = (int) nul_char;
-				left_tail_len = eq-percent-1;
-			} else {
-				left_tail = NULL;
-				left_tail_len = 0;
-			}
-
-			if ((percent = (wchar_t *) wschr(++eq,
-							 (int) percent_char)) == NULL) {
-
-				right_hand[0] = ALLOC_WC(wslen(eq) + 1);
-				right_hand[1] = NULL;
-				(void) wscpy(right_hand[0], eq);
-			} else {
-				i = 0;
-				do {
-					right_hand[i] = ALLOC_WC(percent-eq+1);
-					(void) wsncpy(right_hand[i],
-						      eq,
-						      percent - eq);
-					right_hand[i][percent-eq] =
-					  (int) nul_char;
-					if (i++ >= VSIZEOF(right_hand)) {
-						fatal_mksh(catgets(libmksdmsi18n_catd, 1, 124, "Too many %% in pattern"));
-					}
-					eq = percent + 1;
-					if (eq[0] == (int) nul_char) {
-						MBSTOWCS(wcs_buffer, "");
-						right_hand[i] = (wchar_t *) wsdup(wcs_buffer);
-						i++;
-						break;
-					}
-				} while ((percent = (wchar_t *) wschr(eq, (int) percent_char)) != NULL);
-				if (eq[0] != (int) nul_char) {
-					right_hand[i] = ALLOC_WC(wslen(eq) + 1);
-					(void) wscpy(right_hand[i], eq);
-					i++;
-				}
-				right_hand[i] = NULL;
-			}
-			replacement = pattern_replace;
+			/*
+			 * Percent-style substition -- op%os=np%ns
+			 */
+			_parse_percent_subst(colon, &rpl);
 		}
 	}
+
 	if (name == NULL) {
 		/*
 		 * No translations found.
 		 * Use the whole string as the macro name.
 		 */
-		name = GETNAME(string.buffer.start,
-			       string.text.p - string.buffer.start);
+		name = GETNAME(str->str_buf_start, str->str_p -
+		    str->str_buf_start);
 	}
-	if (string.free_after_use) {
-		retmem(string.buffer.start);
+
+	/*
+	 * Take note of any special macro considerations:
+	 */
+	if (is_magic_macro_name(MMI_MAKE, name) == B_TRUE) {
+		make_word_mentioned = B_TRUE;
 	}
-	if (name == make) {
-		make_word_mentioned = true;
+	if (is_magic_macro_name(MMI_QUERY, name) == B_TRUE) {
+		query_mentioned = B_TRUE;
 	}
-	if (name == query) {
-		query_mentioned = true;
+	if (is_magic_macro_name(MMI_HOST_ARCH, name) == B_TRUE ||
+	    is_magic_macro_name(MMI_TARGET_ARCH, name) == B_TRUE) {
+		init_arch_macros();
 	}
-	if ((name == host_arch) || (name == target_arch)) {
-		if (!init_arch_done) {
-			init_arch_done = true;
-			init_arch_macros();
-		}
+	if (is_magic_macro_name(MMI_HOST_MACH, name) == B_TRUE ||
+	    is_magic_macro_name(MMI_TARGET_MACH, name) == B_TRUE) {
+		init_mach_macros();
 	}
-	if ((name == host_mach) || (name == target_mach)) {
-		if (!init_mach_done) {
-			init_mach_done = true;
-			init_mach_macros();
-		}
-	}
-	/* Get the macro value. */
-	macro = get_prop(name->prop, macro_prop);
-#ifdef NSE
-        if (nse_watch_vars && nse && macro != NULL) {
-                if (macro->body.macro.imported) {
-                        nse_shell_var_used= name;
-		}
-                if (macro->body.macro.value != NULL){
-	              if (nse_backquotes(macro->body.macro.value->string)) {
-	                       nse_backquote_seen= name;
-		      }
-	       }
-	}
-#endif
-	if ((macro != NULL) && macro->body.macro.is_conditional) {
-		conditional_macro_used = true;
+
+	_get_macro_value(name, dest, &rpl, extraction, cmd);
+
+	free(rpl.rpl_left_head);
+	free(rpl.rpl_left_tail);
+	free(rpl.rpl_right_head);
+	free(rpl.rpl_right_tail);
+	for (i = 0; rpl.rpl_right_hand[i] != NULL; i++)
+		free(rpl.rpl_right_hand[i]);
+}
+
+static void
+_get_macro_value(name_t *name, string_t *dest, replacement_t *rpl,
+    extraction_type_t ext, boolean_t cmd)
+{
+	property_t *prop;
+	macro_t *macro;
+	string_t str;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+
+	/*
+	 * Locate the macro property for this name:
+	 */
+	prop = get_prop(name->n_prop, PT_MACRO);
+	if (prop == NULL) {
 		/*
-		 * Add this conditional macro to the beginning of the
-		 * global list.
+		 * The macro property does not exist at all, so skip out.
 		 */
-		add_macro_to_global_list(name);
-		if (makefile_type == reading_makefile) {
-			warning_mksh(catgets(libmksdmsi18n_catd, 1, 164, "Conditional macro `%s' referenced in file `%ws', line %d"),
-					name->string_mb, file_being_read, line_number);
-		}
-	}
-	/* Macro name read and parsed. Expand the value. */
-	if ((macro == NULL) || (macro->body.macro.value == NULL)) {
-		/* If the value is empty, we just get out of here. */
 		goto exit;
 	}
-	if (replacement == sh_replace) {
-		/* If we should do a :sh transform, we expand the command
-		 * and process it.
-		 */
-		INIT_STRING_FROM_STACK(string, buffer);
-		/* Expand the value into a local string buffer and run cmd. */
-		expand_value_with_daemon(name, macro, &string, cmd);
-		sh_command2string(&string, destination);
-	} else if ((replacement != no_replace) || (extraction != no_extract)) {
+	if (prop->p_type != PT_MACRO)
+		abort();
+	macro = (macro_t *)prop->p_body;
+	switch (macro->m_daemon) {
+	case DN_NO_DAEMON:
+		if (macro->m_value == NULL)
+			goto exit;
+		break;
+	case DN_CHAIN_DAEMON:
+		if (macro->m_chain == NULL)
+			goto exit;
+		break;
+	default:
+		abort();
+	}
+
+	if (macro->m_is_conditional == B_TRUE) {
+		conditional_macro_used = B_TRUE;
 		/*
-		 * If there were any transforms specified in the macro
-		 * name, we deal with them here.
+		 * Add this conditional macro to the beginning of the global
+		 * list.
 		 */
-		INIT_STRING_FROM_STACK(string, buffer);
-		/* Expand the value into a local string buffer. */
-		expand_value_with_daemon(name, macro, &string, cmd);
-		/* Scan the expanded string. */
-		p = string.buffer.start;
-		while (*p != (int) nul_char) {
-			wchar_t		chr;
+		add_macro_to_global_list(name);
+		if (makefile_type == MFT_READING_MAKEFILE) {
+			warning_mksh(catgets(libmksdmsi18n_catd, 1, 164,
+			    "Conditional macro `%ls' referenced in file "
+			    "`%ls', line %d"), name->n_key, file_being_read,
+			    line_number);
+		}
+	}
+
+	if (rpl->rpl_type == RT_SHELL) {
+		/*
+		 * This is a shell replacement, so expand the command and
+		 * process it.
+		 */
+		INIT_STRING_FROM_STACK(str, buf);
+
+		expand_value_with_daemon(name, macro, &str, cmd);
+		sh_command2string(&str, dest);
+
+	} else if (rpl->rpl_type != RT_NONE || ext != EXT_NO) {
+		wchar_t *p;
+		wchar_t *block_start;
+		wchar_t save;
+
+		/*
+		 * There are replacements or extractions.  Process them.
+		 */
+		INIT_STRING_FROM_STACK(str, buf);
+
+		expand_value_with_daemon(name, macro, &str, cmd);
+		/*
+		 * Scan the expanded string:
+		 */
+		p = str.str_buf_start;
+		while (*p != L'\0') {
+			string_t exstr;
+			wchar_t exbuf[MAXPATHLEN];
 
 			/*
-			 * First skip over any white space and append
-			 * that to the destination string.
+			 * First, skip over any whitespace and append that
+			 * to the destination string.
 			 */
 			block_start = p;
-			while ((*p != (int) nul_char) && iswspace(*p)) {
+			while (*p != L'\0' && iswspace(*p))
 				p++;
-			}
-			append_string(block_start,
-				      destination,
-				      p - block_start);
-			/* Then find the end of the next word. */
+			append_string_wide(block_start, dest, p - block_start);
+			/*
+			 * Then, find the end of the next word:
+			 */
 			block_start = p;
-			while ((*p != (int) nul_char) && !iswspace(*p)) {
+			while (*p != L'\0' && !iswspace(*p))
 				p++;
-			}
-			/* If we cant find another word we are done */
-			if (block_start == p) {
+			/*
+			 * If we do not find another word, we are done.
+			 */
+			if (block_start == p)
 				break;
-			}
-			/* Then apply the transforms to the word */
-			INIT_STRING_FROM_STACK(extracted, extracted_string);
-			switch (extraction) {
-			case dir_extract:
-				/*
-				 * $(@D) type transform. Extract the
-				 * path from the word. Deliver "." if
-				 * none is found.
-				 */
-				if (p != NULL) {
-					chr = *p;
-					*p = (int) nul_char;
-				}
-				eq = (wchar_t *) wsrchr(block_start, (int) slash_char);
-				if (p != NULL) {
-					*p = chr;
-				}
-				if ((eq == NULL) || (eq > p)) {
-					MBSTOWCS(wcs_buffer, ".");
-					append_string(wcs_buffer, &extracted, 1);
-				} else {
-					append_string(block_start,
-						      &extracted,
-						      eq - block_start);
-				}
-				break;
-			case file_extract:
-				/*
-				 * $(@F) type transform. Remove the path
-				 * from the word if any.
-				 */
-				if (p != NULL) {
-					chr = *p;
-					*p = (int) nul_char;
-				}
-				eq = (wchar_t *) wsrchr(block_start, (int) slash_char);
-				if (p != NULL) {
-					*p = chr;
-				}
-				if ((eq == NULL) || (eq > p)) {
-					append_string(block_start,
-						      &extracted,
-						      p - block_start);
-				} else {
-					append_string(eq + 1,
-						      &extracted,
-						      p - eq - 1);
-				}
-				break;
-			case no_extract:
-				append_string(block_start,
-					      &extracted,
-					      p - block_start);
-				break;
-			}
-			switch (replacement) {
-			case suffix_replace:
-				/*
-				 * $(FOO:.o=.c) type transform.
-				 * Maybe replace the tail of the word.
-				 */
-				if (((extracted.text.p -
-				      extracted.buffer.start) >=
-				     left_tail_len) &&
-				    IS_WEQUALN(extracted.text.p - left_tail_len,
-					      left_tail,
-					      left_tail_len)) {
-					append_string(extracted.buffer.start,
-						      destination,
-						      (extracted.text.p -
-						       extracted.buffer.start)
-						      - left_tail_len);
-					append_string(right_tail,
-						      destination,
-						      FIND_LENGTH);
-				} else {
-					append_string(extracted.buffer.start,
-						      destination,
-						      FIND_LENGTH);
-				}
-				break;
-			case pattern_replace:
-				/* $(X:a%b=c%d) type transform. */
-				if (((extracted.text.p -
-				      extracted.buffer.start) >=
-				     left_head_len+left_tail_len) &&
-				    IS_WEQUALN(left_head,
-					      extracted.buffer.start,
-					      left_head_len) &&
-				    IS_WEQUALN(left_tail,
-					      extracted.text.p - left_tail_len,
-					      left_tail_len)) {
-					i = 0;
-					while (right_hand[i] != NULL) {
-						append_string(right_hand[i],
-							      destination,
-							      FIND_LENGTH);
-						i++;
-						if (right_hand[i] != NULL) {
-							append_string(extracted.buffer.
-								      start +
-								      left_head_len,
-								      destination,
-								      (extracted.text.p - extracted.buffer.start)-left_head_len-left_tail_len);
-						}
-					}
-				} else {
-					append_string(extracted.buffer.start,
-						      destination,
-						      FIND_LENGTH);
-				}
-				break;
-			case no_replace:
-				append_string(extracted.buffer.start,
-					      destination,
-					      FIND_LENGTH);
-				break;
-			case sh_replace:
-				break;
-			    }
-		}
-		if (string.free_after_use) {
-			retmem(string.buffer.start);
+			/*
+			 * Process the requested extraction:
+			 */
+			INIT_STRING_FROM_STACK(exstr, exbuf);
+
+			save = *p;
+			*p = L'\0';
+			_extract_string(ext, block_start, &exstr);
+			*p = save;
+
+			/*
+			 * Process the requested replacement:
+			 */
+			_replace_string(rpl, &exstr, dest);
+			if (exstr.str_free_after_use == B_TRUE)
+				free(exstr.str_buf_start);
 		}
 	} else {
 		/*
-		 * This is for the case when the macro name did not
-		 * specify transforms.
+		 * There are no replacements or extractions.
 		 */
-		if (!strncmp(name->string_mb, NOCATGETS("GET"), 3)) {
-			dollarget_seen = true;
+		if (wcscmp(name->n_key, L"GET") == 0) {
+			dollarget_seen = B_TRUE;
 		}
-		dollarless_flag = false;
-		if (!strncmp(name->string_mb, "<", 1) &&
-		    dollarget_seen) {
-			dollarless_flag = true;
-			dollarget_seen = false;
+		dollarless_flag = B_FALSE;
+		if (wcscmp(name->n_key, L"<") && dollarget_seen == B_TRUE) {
+			dollarless_flag = B_TRUE;
+			dollarget_seen = B_FALSE;
 		}
-		expand_value_with_daemon(name, macro, destination, cmd);
+		expand_value_with_daemon(name, macro, dest, cmd);
 	}
+
 exit:
-	if(left_tail) {
-		retmem(left_tail);
+	if (str.str_free_after_use == B_TRUE)
+		free(str.str_buf_start);
+}
+
+static void
+_extract_string(extraction_type_t ext, wchar_t *block_start, string_t *dest)
+{
+	wchar_t *eq;
+
+	switch (ext) {
+	case EXT_DIR:
+		/*
+		 * $(@D) type transform.  Extract the path from the word.
+		 * Deliver "." if none is found.
+		 */
+		if ((eq = wcsrchr(block_start, L'/')) == NULL) {
+			append_char(L'.', dest);
+		} else {
+			append_string_wide(block_start, dest,
+			    eq - block_start);
+		}
+		break;
+	case EXT_FILE:
+		/*
+		 * $(@F) type transform.  Remove the path from the word,
+		 * if any.
+		 */
+		if ((eq = wcsrchr(block_start, L'/')) == NULL) {
+			append_string_wide(block_start, dest, FIND_LENGTH);
+		} else {
+			append_string_wide(eq + 1, dest, FIND_LENGTH);
+		}
+		break;
+	case EXT_NO:
+		append_string_wide(block_start, dest, FIND_LENGTH);
+		break;
+	default:
+		abort();
 	}
-	if(right_tail) {
-		retmem(right_tail);
+}
+
+
+static void
+_replace_string(replacement_t *rpl, string_t *str, string_t *dest)
+{
+	switch (rpl->rpl_type) {
+	case RT_SUFFIX:
+		/*
+		 * $(FOO:.o=.c) type transform.
+		 * Possibly replace the tail of the word.
+		 */
+		if ((str->str_p - str->str_buf_start >=
+		    rpl->rpl_left_tail_len) &&
+		    wcsncmp(str->str_p - rpl->rpl_left_tail_len,
+		    rpl->rpl_left_tail, rpl->rpl_left_tail_len) == 0) {
+			/*
+			 * Copy up to the tail:
+			 */
+			append_string_wide(str->str_buf_start, dest,
+			    str->str_p - str->str_buf_start -
+			    rpl->rpl_left_tail_len);
+			/*
+			 * Copy in the replacement tail:
+			 */
+			append_string_wide(rpl->rpl_right_tail, dest,
+			    FIND_LENGTH);
+		} else {
+			/*
+			 * Copy the string unaltered:
+			 */
+			append_string_wide(str->str_buf_start, dest,
+			    FIND_LENGTH);
+		}
+		break;
+	case RT_PATTERN:
+		/*
+		 * $(FOO:a%b=c%d) type transform.
+		 */
+		if ((str->str_p - str->str_buf_start >=
+		    rpl->rpl_left_head_len + rpl->rpl_left_tail_len) &&
+		    wcsncmp(rpl->rpl_left_head, str->str_buf_start,
+		    rpl->rpl_left_head_len) == 0 &&
+		    wcsncmp(rpl->rpl_left_tail, str->str_p -
+		    rpl->rpl_left_tail_len, rpl->rpl_left_tail_len) == 0) {
+			int i = 0;
+			while (rpl->rpl_right_hand[i] != NULL) {
+				append_string_wide(rpl->rpl_right_hand[i],
+				    dest, FIND_LENGTH);
+				i++;
+				if (rpl->rpl_right_hand[i] != NULL) {
+					int len = str->str_p -
+					    str->str_buf_start -
+					    rpl->rpl_left_head_len -
+					    rpl->rpl_left_tail_len;
+					append_string_wide(str->str_buf_start +
+					    rpl->rpl_left_head_len, dest, len);
+				}
+			}
+		} else {
+			/*
+			 * Copy the string unaltered:
+			 */
+			append_string_wide(str->str_buf_start, dest,
+			    FIND_LENGTH);
+		}
+		break;
+	case RT_NONE:
+		append_string_wide(str->str_buf_start, dest, FIND_LENGTH);
+		break;
+	case RT_SHELL:
+		/*
+		 * XXX should we get here for this one?
+		 */
+		break;
+	default:
+		abort();
 	}
-	if(left_head) {
-		retmem(left_head);
-	}
-	i = 0;
-	while (right_hand[i] != NULL) {
-		retmem(right_hand[i]);
-		i++;
-	}
-	*destination->text.p = (int) nul_char;
-	destination->text.end = destination->text.p;
+	*dest->str_p = L'\0';
+	dest->str_end = dest->str_p;
 }
 
 static void
 add_macro_to_global_list(name_t *macro_to_add)
 {
-	macro_list_t	*new_macro;
-	macro_list_t	*macro_on_list;
-	char		*name_on_list = (char*)NULL;
-	char		*name_to_add = macro_to_add->n_key;
-	char		*value_on_list = (char*)NULL;
-	char		*value_to_add = (char*)NULL;
+	macro_list_t *ml;
+	wchar_t *name_on_list = NULL, *value_on_list = NULL;
+	wchar_t *name_to_add = macro_to_add->n_key;
+	wchar_t *value_to_add = NULL;
+	property_t *prop;
+	macro_t *macro = NULL;
+       
+	prop = get_prop(macro_to_add->n_prop, PT_MACRO);
+	if (prop != NULL)
+		macro = (macro_t *)prop->p_body;
 
-	if (macro_to_add->prop->body.macro.value != NULL) {
-		value_to_add = macro_to_add->prop->body.macro.value->string_mb;
+	if (macro != NULL && macro->m_value != NULL) {
+		value_to_add = macro->m_value->n_key;
 	} else {
-		value_to_add = "";
+		value_to_add = L"";
 	}
 
 	/*
-	 * Check if this macro is already on list, if so, do nothing
+	 * Check if this macro is already on list; if so, do nothing.
 	 */
-	for (macro_on_list = cond_macro_list;
-	     macro_on_list != NULL;
-	     macro_on_list = macro_on_list->ml_next) {
+	for (ml = cond_macro_list; ml != NULL; ml = ml->ml_next) {
+		name_on_list = ml->ml_macro_name;
+		value_on_list = ml->ml_value;
 
-		name_on_list = macro_on_list->ml_macro_name;
-		value_on_list = macro_on_list->ml_value;
-
-		if (strcmp(name_on_list, name_to_add) == 0 &&
-		    strcmp(value_on_list, value_to_add) == 0) {
+		if (wcscmp(name_on_list, name_to_add) == 0 &&
+		    wcscmp(value_on_list, value_to_add) == 0) {
 			return;
 		}
 	}
+
 	/*
 	 * Otherwise, put it at the head of the list:
 	 */
-	new_macro = malloc(sizeof (*new_macro));
-	new_macro->ml_macro_name = xstrdup(name_to_add);
-	new_macro->ml_value = xstrdup(value_to_add);
-	new_macro->ml_next = cond_macro_list;
-	cond_macro_list = new_macro;
+	ml = xmalloc(sizeof (*ml));
+	ml->ml_macro_name = xwcsdup(name_to_add);
+	ml->ml_value = xwcsdup(value_to_add);
+	ml->ml_next = cond_macro_list;
+	cond_macro_list = ml;
 }
 
 /*
@@ -978,50 +1030,58 @@ add_macro_to_global_list(name_t *macro_to_add)
 static void
 init_arch_macros(void)
 {
-	string_t	result_string;
-	wchar_t		wc_buf[STRING_BUFFER_LENGTH];
-	FILE		*pipe;
-
-	name_t		*value;
-	const char *mach_command = NOCATGETS("/bin/mach");
+	FILE *pipe;
+	name_t *value;
+	const char *arch_command = NOCATGETS("/bin/arch");
 	string_t str;
 	wchar_t buf[STRING_BUFFER_LENGTH];
 	char fgetsbuf[100];
-	boolean_t set_host, set_target;
+	boolean_t set_host = B_FALSE, set_target = B_FALSE;
+	name_t *host_arch, *target_arch;
 
 	/*
-	 * Only set HOST_ARCH and TARGET_ARCH if we have not yet set them some
-	 * other way:
+	 * Skip out if we've already done this:
 	 */
-	set_host = magic_macros[MMI_HOST_ARCH - 1] == NULL ? B_TRUE : B_FALSE;
-	set_target = magic_macros[MMI_TARGET_ARCH - 1] == NULL ? B_TRUE :
-	    B_FALSE;
+	if (init_arch_done == B_TRUE)
+		return;
+	init_arch_done = B_TRUE;
 
+	host_arch = _internal_get_magic_macro(MMI_HOST_ARCH);
+	target_arch = _internal_get_magic_macro(MMI_TARGET_ARCH);
+
+	if (get_prop(host_arch->n_prop, PT_MACRO) == NULL)
+		set_host = B_TRUE;
+	if (get_prop(target_arch->n_prop, PT_MACRO) == NULL)
+		set_target = B_TRUE;
+
+	/*
+	 * If both have been set already, don't proceed any further:
+	 */
 	if (set_host == B_FALSE && set_target == B_FALSE)
 		return;
 
 	INIT_STRING_FROM_STACK(str, buf);
-	append_char(hyphen_char, &str);
+	append_char(L'-', &str);
 
-	if ((pipe = popen(mach_command, "r")) == NULL) {
+	if ((pipe = popen(arch_command, "r")) == NULL) {
 		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 185,
-		    "Execute of %s failed"), mach_command);
+		    "Execute of %s failed"), arch_command);
 	}
 	while (fgets(fgetsbuf, sizeof (fgetsbuf), pipe) != NULL)
 		append_string(fgetsbuf, &str, FIND_LENGTH);
 	if (pclose(pipe) != 0) {
 		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 186, "Execute of %s "
-		    "failed"), mach_command);
+		    "failed"), arch_command);
 	}
 
-	value = GETNAME(result_string.str_buf_start, FIND_LENGTH);
-	if (set_host) {
-		(void) setvar_daemon(host_arch, value, B_FALSE, no_daemon,
-		    B_TRUE, 0);
+	value = GETNAME(str.str_buf_start, FIND_LENGTH);
+	if (set_host == B_TRUE) {
+		(void) setvar_daemon(host_arch, value, B_FALSE,
+		    DN_NO_DAEMON, B_TRUE, 0);
 	}
-	if (set_target) {
-		(void) setvar_daemon(target_arch, value, B_FALSE, no_daemon,
-		    B_TRUE, 0);
+	if (set_target == B_TRUE) {
+		(void) setvar_daemon(target_arch, value, B_FALSE,
+		    DN_NO_DAEMON, B_TRUE, 0);
 	}
 }
 
@@ -1043,40 +1103,58 @@ init_arch_macros(void)
 static void
 init_mach_macros(void)
 {
-	String_rec	result_string;
-	wchar_t		wc_buf[STRING_BUFFER_LENGTH];
-	char		mb_buf[STRING_BUFFER_LENGTH];
-	FILE		*pipe;
-	Name		value;
-	int		set_host, set_target;
-	const char	*arch_command = NOCATGETS("/bin/arch");
+	FILE *pipe;
+	name_t *value;
+	const char *mach_command = NOCATGETS("/bin/mach");
+	string_t str;
+	wchar_t buf[STRING_BUFFER_LENGTH];
+	char fgetsbuf[100];
+	boolean_t set_host = B_FALSE, set_target = B_FALSE;
+	name_t *host_mach, *target_mach;
 
-	set_host = (get_prop(host_mach->prop, macro_prop) == NULL);
-	set_target = (get_prop(target_mach->prop, macro_prop) == NULL);
+	/*
+	 * Skip out if we've already done this:
+	 */
+	if (init_mach_done == B_TRUE)
+		return;
+	init_mach_done = B_TRUE;
 
-	if (set_host || set_target) {
-		INIT_STRING_FROM_STACK(result_string, wc_buf);
-		append_char((int) hyphen_char, &result_string);
+	host_mach = _internal_get_magic_macro(MMI_HOST_MACH);
+	target_mach = _internal_get_magic_macro(MMI_TARGET_MACH);
 
-		if ((pipe = popen(arch_command, "r")) == NULL) {
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 183, "Execute of %s failed"), arch_command);
-		}
-		while (fgets(mb_buf, sizeof(mb_buf), pipe) != NULL) {
-			MBSTOWCS(wcs_buffer, mb_buf);
-			append_string(wcs_buffer, &result_string, wslen(wcs_buffer));
-		}
-		if (pclose(pipe) != 0) {
-			fatal_mksh(catgets(libmksdmsi18n_catd, 1, 184, "Execute of %s failed"), arch_command);
-		}
+	/*
+	 * If both have been set already, don't proceed any further:
+	 */
+	if (set_host == B_FALSE && set_target == B_FALSE)
+		return;
 
-		value = GETNAME(result_string.buffer.start, wslen(result_string.buffer.start));
+	if (get_prop(host_mach->n_prop, PT_MACRO) == NULL)
+		set_host = B_TRUE;
+	if (get_prop(target_mach->n_prop, PT_MACRO) == NULL)
+		set_target = B_TRUE;
 
-		if (set_host) {
-			(void) setvar_daemon(host_mach, value, false, no_daemon, true, 0);
-		}
-		if (set_target) {
-			(void) setvar_daemon(target_mach, value, false, no_daemon, true, 0);
-		}
+	INIT_STRING_FROM_STACK(str, buf);
+	append_char(L'-', &str);
+
+	if ((pipe = popen(mach_command, "r")) == NULL) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 183,
+		    "Execute of %s failed"), mach_command);
+	}
+	while (fgets(fgetsbuf, sizeof (fgetsbuf), pipe) != NULL)
+		append_string(fgetsbuf, &str, FIND_LENGTH);
+	if (pclose(pipe) != 0) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 184, "Execute of %s "
+		    "failed"), mach_command);
+	}
+
+	value = GETNAME(str.str_buf_start, FIND_LENGTH);
+	if (set_host == B_TRUE) {
+		(void) setvar_daemon(host_mach, value, B_FALSE,
+		    DN_NO_DAEMON, B_TRUE, 0);
+	}
+	if (set_target == B_TRUE) {
+		(void) setvar_daemon(target_mach, value, B_FALSE,
+		    DN_NO_DAEMON, B_TRUE, 0);
 	}
 }
 
@@ -1095,71 +1173,70 @@ init_mach_macros(void)
  *	Global variables used:
  */
 static void
-#ifdef NSE
-expand_value_with_daemon(Name name, register Property macro, register String destination, Boolean cmd)
-#else
-expand_value_with_daemon(Name, register Property macro, register String destination, Boolean cmd)
-#endif
+expand_value_with_daemon(name_t *name __UNUSED, macro_t *macro,
+    string_t *destination, boolean_t cmd)
 {
-	register Chain		chain;
+	chain_t *chain;
 
-#ifdef NSE
-        if (reading_dependencies) {
-                /*
-                 * Processing the dependencies themselves
-                 */
-                depvar_dep_macro_used(name);
-	} else {
-                /*
-	         * Processing the rules for the targets
-	         * the nse_watch_vars flags chokes off most
-	         * checks.  it is true only when processing
-	         * the output from a recursive make run
-	         * which is all we are interested in here.
-	         */
-	         if (nse_watch_vars) {
-	                depvar_rule_macro_used(name);
-		}
-	 }
-#endif
-
-	switch (macro->body.macro.daemon) {
-	case no_daemon:
+	switch (macro->m_daemon) {
+	case DN_NO_DAEMON:
 		if (!svr4 && !posix) {
-			expand_value(macro->body.macro.value, destination, cmd);
+			expand_value(macro->m_value, destination, cmd);
 		} else {
 			if (dollarless_flag && tilde_rule) {
-				expand_value(dollarless_value, destination, cmd);
-				dollarless_flag = false;
-				tilde_rule = false;
+				expand_value(dollarless_value, destination,
+				    cmd);
+				dollarless_flag = B_FALSE;
+				tilde_rule = B_FALSE;
 			} else {
-				expand_value(macro->body.macro.value, destination, cmd);
+				expand_value(macro->m_value, destination, cmd);
 			}
 		}
 		return;
-	case chain_daemon:
+	case DN_CHAIN_DAEMON:
 		/* If this is a $? value we call the daemon to translate the */
 		/* list of names to a string */
-		for (chain = (Chain) macro->body.macro.value;
+		for (chain = macro->m_chain;
 		     chain != NULL;
-		     chain = chain->next) {
-			APPEND_NAME(chain->name,
-				      destination,
-				      (int) chain->name->hash.length);
-			if (chain->next != NULL) {
-				append_char((int) space_char, destination);
+		     chain = chain->ch_next) {
+			append_string_name(chain->ch_name, destination);
+			if (chain->ch_next != NULL) {
+				append_char(L' ', destination);
 			}
 		}
 		return;
 	}
 }
 
+boolean_t
+is_vpath_defined(void)
+{
+	name_t *vpath;
+	property_t *prop;
+	macro_t *macro;
+
+	if ((vpath = get_magic_macro(MMI_VPATH)) == NULL)
+		return (B_FALSE);
+
+	if ((prop = get_prop(vpath->n_prop, PT_MACRO)) == NULL)
+		return (B_FALSE);
+
+	macro = (macro_t *)prop->p_body;
+	if (macro->m_value->n_key[0] == L'\0')
+		return (B_FALSE);
+
+	return (B_TRUE);
+}
+
 /*
  * We use a permanent buffer to reset SUNPRO_DEPENDENCIES value.
+ * XXX No: We Do Not.
  */
+#if 0
 char	*sunpro_dependencies_buf = NULL;
 char	*sunpro_dependencies_oldbuf = NULL;
 int	sunpro_dependencies_buf_size = 0;
+#endif
 
 /*
  *	setvar_daemon(name, value, append, daemon, strip_trailing_spaces)
@@ -1186,9 +1263,9 @@ int	sunpro_dependencies_buf_size = 0;
  *		vpath_name	The Name "VPATH", compared against
  *		envvar		A list of environment vars with $ in value
  */
-property_t *
+macro_t *
 setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
-    boolean strip_trailing_spaces, short debug_level)
+    boolean_t strip_trailing_spaces, short debug_level)
 {
 	property_t *propm, *propma;
 	macro_t *macro;
@@ -1230,7 +1307,7 @@ setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
 
 	if ((makefile_type != MFT_READING_NOTHING) &&
 	    macro->m_read_only == B_TRUE) {
-		return (propm);
+		return (macro);
 	}
 
 	if (value != NULL) {
@@ -1240,7 +1317,7 @@ setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
 		int length = wcslen(value->n_key);
 		if (length > 0 && iswspace(value->n_key[length - 1])) {
 			wchar_t *tmp = xwcsdup(value->n_key);
-			while (length > 0) {
+			while (strip_trailing_spaces == B_TRUE && length > 0) {
 				if (!iswspace(tmp[length - 1]))
 					break;
 				tmp[length - 1] = (wchar_t)0;
@@ -1263,13 +1340,13 @@ setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
 		 * the old one with a space in between.
 		 */
 		INIT_STRING_FROM_STACK(dest, buf);
-		buf[0] = WCNUL;
+		buf[0] = L'\0';
 
 		if ((macro != NULL) && (val != NULL))
 			append_string_name(val, &dest);
 
 		if (value != NULL) {
-			if (buf[0] != WCNUL && value->n_key[0] != WCNUL) {
+			if (buf[0] != L'\0' && value->n_key[0] != L'\0') {
 				/*
 				 * We need a separating space:
 				 */
@@ -1309,19 +1386,17 @@ setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
 	 * Set the new values in the macro property block.
 	 */
 	if (macapx != NULL) {
-		macapx->ma_value = value;
+		macapx->map_value = value;
 		INIT_STRING_FROM_STACK(dest, buf);
-		buf[0] = WCNUL;
-		if (value != NULL) {
+		buf[0] = L'\0';
+		if (value != NULL)
 			append_string_name(value, &dest);
-			if (macapx->ma_value_to_append != NULL)
-		}
-		if (macapx->ma_value_to_append != NULL) {
-			if (buf[0] != WCNUL &&
-			    macapx->ma_value_to_append->n_key[0] != WCNUL) {
+		if (macapx->map_value_to_append != NULL) {
+			if (buf[0] != L'\0' &&
+			    macapx->map_value_to_append->n_key[0] != L'\0') {
 				append_string(" ", &dest, FIND_LENGTH);
 			}
-			append_string_name(macapx->ma_value_to_append, &dest);
+			append_string_name(macapx->map_value_to_append, &dest);
 		}
 		value = GETNAME(dest.str_buf_start, FIND_LENGTH);
 		if (dest.str_free_after_use == B_TRUE)
@@ -1353,81 +1428,63 @@ setvar_daemon(name_t *name, void *valarg, boolean_t append, daemon_t daemon,
 	 * each time.
 	 */
 	if (macro->m_exported == B_TRUE) {
-	}
+		if (reading_environment == B_FALSE && (value != NULL) &&
+		    value->n_dollar == B_TRUE) {
+			boolean_t found = B_FALSE;
+			envvar_t *ev;
 
-	/* XXX JMC THIS IS A MESS */
-
-#if 0
-	/* If this sets the VPATH we remember that */
-	if ((name == vpath_name) &&
-	    (value != NULL) &&
-	    (value->hash.length > 0)) {
-		vpath_defined = true;
-	}
-#endif
-
-	/*
-	 * For environment variables we also set the
-	 * environment value each time.
-	 */
-	if (macro->body.macro.exported) {
-		static char	*env;
-
-		if (!reading_environment && (value != NULL) && value->dollar) {
-			Envvar	p;
-
-			for (p = envvar; p != NULL; p = p->next) {
-				if (p->name == name) {
-					p->value = value;
-					p->already_put = false;
-					goto found_it;
+			for (ev = envvar; ev != NULL; ev = ev->ev_next) {
+				if (ev->ev_name == name) {
+					ev->ev_value = value;
+					ev->ev_already_put = B_FALSE;
+					found = B_TRUE;
+					break;
 				}
 			}
-			p = ALLOC(Envvar);
-			p->name = name;
-			p->value = value;
-			p->next = envvar;
-			p->env_string = NULL;
-			p->already_put = false;
-			envvar = p;
-found_it:;
+
+			if (found == B_FALSE) {
+				ev = xmalloc(sizeof (*ev));
+				ev->ev_name = name;
+				ev->ev_value = value;
+				ev->ev_next = envvar;
+				ev->ev_env_string = NULL;
+				ev->ev_already_put = B_FALSE;
+				envvar = ev;
+			}
 		} else {
-			length = 2 + strlen(name->string_mb);
-			if (value != NULL) {
-				length += strlen(value->string_mb);
-			}
-			Property env_prop = maybe_append_prop(name, env_mem_prop);
-			/*
-			 * We use a permanent buffer to reset SUNPRO_DEPENDENCIES value.
-			 */
-			if (!strncmp(name->string_mb, NOCATGETS("SUNPRO_DEPENDENCIES"), 19)) {
-				if (length >= sunpro_dependencies_buf_size) {
-					sunpro_dependencies_buf_size=length*2;
-					if (sunpro_dependencies_buf_size < 4096)
-						sunpro_dependencies_buf_size = 4096; // Default minimum size
-					if (sunpro_dependencies_buf)
-						sunpro_dependencies_oldbuf = sunpro_dependencies_buf;
-					sunpro_dependencies_buf=getmem(sunpro_dependencies_buf_size);
-				}
-				env = sunpro_dependencies_buf;
-			} else {
-				env = getmem(length);
-			}
-			env_alloc_num++;
-			env_alloc_bytes += length;
-			(void) sprintf(env,
-				       "%s=%s",
-				       name->string_mb,
-				       value == NULL ?
-			                 "" : value->string_mb);
-			(void) putenv(env);
-			env_prop->body.env_mem.value = env;
-			if (sunpro_dependencies_oldbuf) {
-				/* Return old buffer */
-				retmem_mb(sunpro_dependencies_oldbuf);
-				sunpro_dependencies_oldbuf = NULL;
-			}
+			property_t *env_prop = maybe_append_prop(name,
+			    PT_ENV_MEM);
+			env_mem_t *env_mem = (env_mem_t *)env_prop->p_body;
+
+			free(env_mem->em_value);
+
+			if (asprintf(&env_mem->em_value, "%ls=%ls", name->n_key,
+			   value == NULL ? L"" : value->n_key) == -1)
+				abort(); /* XXX */
+			(void) putenv(env_mem->em_value);
 		}
+	}
+	/*
+	 * XXX NOT IMPLEMENTED; QUESTIONABLE VALUE.
+	 */
+	if (is_magic_macro_name(MMI_TARGET_ARCH, name) == B_TRUE) {
+		fprintf(stderr, "ABORT - DO NOT PRESENTLY SUPPORT SETTING "
+		   "TARGET_ARCH MACRO.\n");
+		abort();
+	}
+#if 0
+		name_t *ha = get_magic_macro(MMI_HOST_ARCH);
+		name_t *ta = get_magic_macro(MMI_TARGET_ARCH);
+		name_t *va = get_magic_macro(MMI_VIRTUAL_ROOT);
+		int length;
+		wchar_t *newval;
+		wchar_t *oldvr;
+		boolean_t *newalloc = B_FALSE;
+
+		length = 32 + wcslen(ha->n_key) + wcslen(ta->n_key) +
+		    wcslen(vr->n_key);
+
+		/* XXX SIGH, YOU KNOW WHAT... NO. */
 	}
 	if (name == target_arch) {
 		Name		ha = getvar(host_arch);
@@ -1481,5 +1538,6 @@ found_it:;
 			retmem(new_value);
 		}
 	}
-	return macro;
+#endif
+	return (macro);
 }

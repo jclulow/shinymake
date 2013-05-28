@@ -28,6 +28,6 @@
 #include <mksh/defs.h>
 
 int get_char_semantics_entry(wchar_t);
-char get_char_semantics_value(wchar_t);
+char_class_t get_char_semantics_value(wchar_t);
 
 #endif	/* _MKSH_I18N_H */

@@ -35,7 +35,9 @@ void expand_macro(source_t *source, string_t *destination,
 void expand_value(name_t *value, string_t *destination, boolean_t cmd);
 name_t *getvar(name_t *name);
 
-property_t *setvar_daemon(name_t *name, name_t *value, boolean_t append,
-    daemon_t daemon, boolean_t strip_trailing_spaces, short debug_level);
+macro_t *setvar_daemon(name_t *name, void *, boolean_t, daemon_t, boolean_t,
+    short);
+
+boolean_t is_vpath_defined(void);
 
 #endif	/* _MKSH_MACRO_H */

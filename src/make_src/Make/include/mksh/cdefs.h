@@ -3,6 +3,8 @@
 #ifndef	_MKSH_CDEFS_H_
 #define	_MKSH_CDEFS_H_
 
+#define	__UNUSED	__attribute__((unused))
+
 typedef enum op_result {
 	OPR_FAILURE = 0,
 	OPR_SUCCESS = 1
@@ -39,7 +41,7 @@ typedef struct _string {
 	do {							\
 		str.str_buf_start = (buf); 			\
 		str.str_buf_end = (buf) +			\
-		    (sizeof (buf) / SIZEOFWCHAR_T);		\
+		    (sizeof (buf) / sizeof (wchar_t));		\
 		str.str_p = (buf);				\
 		str.str_end = NULL;				\
 		str.str_free_after_use = B_FALSE;		\
@@ -181,8 +183,8 @@ typedef struct property {
 
 typedef struct macro_list {
 	struct macro_list	*ml_next;
-	char			*ml_macro_name;
-	char			*ml_value;
+	wchar_t			*ml_macro_name;
+	wchar_t			*ml_value;
 } macro_list_t;
 
 typedef struct name {
@@ -392,7 +394,7 @@ typedef struct envvar {
 	name_t		*ev_value;
 	struct envvar	*ev_next;
 	char		*ev_env_string;
-	boolean_t	already_put;
+	boolean_t	ev_already_put;
 } envvar_t;
 
 typedef struct makefile {
@@ -444,9 +446,9 @@ typedef struct macro_appendix {
 } macro_appendix_t;
 
 typedef struct source {
-	string_t	*src_str;
+	string_t	src_str;
 	struct source	*src_prev;
-	off_t		src_bytes_left_in_file;
+	size_t		src_bytes_left_in_file;
 	int		src_fd;
 	boolean_t	src_already_expanded;
 	boolean_t	src_error_converting;
@@ -517,6 +519,34 @@ typedef struct recursive {
 	boolean_t	rc_in_depinfo;
 } recursive_t;
 
+typedef enum extraction_type {
+	EXT_NO = 0,
+	EXT_DIR,
+	EXT_FILE
+} extraction_type_t;
+
+typedef enum replacement_type {
+	RT_NONE = 0,
+	RT_SUFFIX,
+	RT_PATTERN,
+	RT_SHELL
+} replacement_type_t;
+
+#define	REPLACEMENT_RIGHT_HAND_SIZE	128
+typedef struct replacement {
+	replacement_type_t	rpl_type;
+	wchar_t			*rpl_right_hand[REPLACEMENT_RIGHT_HAND_SIZE];
+
+	wchar_t			*rpl_left_head;
+	wchar_t			*rpl_left_tail;
+	wchar_t			*rpl_right_head;
+	wchar_t			*rpl_right_tail;
+
+	int			rpl_left_head_len;
+	int			rpl_left_tail_len;
+	int			rpl_right_head_len;
+	int			rpl_right_tail_len;
+} replacement_t;
 
 
 

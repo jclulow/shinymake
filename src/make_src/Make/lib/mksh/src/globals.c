@@ -79,7 +79,7 @@ wchar_t char_semantics_char[] = {
 #endif
 	nul_char
 };
-macro_list_t	cond_macro_list = NULL;
+macro_list_t	*cond_macro_list = NULL;
 boolean_t	conditional_macro_used;
 boolean_t	do_not_exec_rule;		/* `-n' */
 boolean_t	dollarget_seen;

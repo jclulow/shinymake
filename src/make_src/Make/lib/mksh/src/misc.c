@@ -39,45 +39,23 @@
 /*
  * Included files
  */
-#include <bsd/bsd.h>		/* bsd_signal() */
-#include <mksh/i18n.h>		/* get_char_semantics_value() */
+#include <bsd/bsd.h>
+#include <mksh/i18n.h>
 #include <mksh/misc.h>
 #include <mksdmsi18n/mksdmsi18n.h>
-#include <stdarg.h>		/* va_list, va_start(), va_end() */
-#include <stdlib.h>		/* mbstowcs() */
-#include <sys/signal.h>		/* SIG_DFL */
-#include <sys/wait.h>		/* wait() */
-
-#ifdef SUN5_0
-#include <string.h>		/* strerror() */
-#endif
-
-#if defined (HP_UX) || defined (linux)
-#include <unistd.h>
-#endif
-
-/*
- * Defined macros
- */
-
-/*
- * typedefs & structs
- */
+#include <stdarg.h>
+#include <stdlib.h>
+#include <sys/signal.h>
+#include <sys/wait.h>
+#include <string.h>
 
 /*
  * Static variables
  */
-#ifdef SUN5_0
-extern "C" void		(*sigivalue)(int) = SIG_DFL;
-extern "C" void		(*sigqvalue)(int) = SIG_DFL;
-extern "C" void		(*sigtvalue)(int) = SIG_DFL;
-extern "C" void		(*sighvalue)(int) = SIG_DFL;
-#else
-static	void		(*sigivalue)(int) = (void (*) (int)) SIG_DFL;
-static	void		(*sigqvalue)(int) = (void (*) (int)) SIG_DFL;
-static	void		(*sigtvalue)(int) = (void (*) (int)) SIG_DFL;
-static	void		(*sighvalue)(int) = (void (*) (int)) SIG_DFL;
-#endif
+void (*sigivalue)(int) = SIG_DFL;
+void (*sigqvalue)(int) = SIG_DFL;
+void (*sigtvalue)(int) = SIG_DFL;
+void (*sighvalue)(int) = SIG_DFL;
 
 long	getname_bytes_count = 0;
 long	getname_names_count = 0;
@@ -90,10 +68,10 @@ long	freename_struct_count = 0;
 long	expandstring_count = 0;
 long	getwstring_count = 0;
 
+
 /*
- * File table of contents
- */
-static void	expand_string(register String string, register int length);
+static void expand_string(string_t *string, size_t length);
+*/
 
 #define	FATAL_ERROR_MSG_SIZE 200
 
@@ -110,12 +88,12 @@ classify_nameblock(name_t *n)
 		sems |= get_char_semantics_value(*pos);
 	}
 
-	np->n_dollar = (sems & CHC_DOLLAR) != 0 ? B_TRUE : B_FALSE;
-	np->n_meta = (sems & CHC_META) != 0 ? B_TRUE : B_FALSE;
-	np->n_percent = (sems & CHC_PERCENT) != 0 ? B_TRUE : B_FALSE;
-	np->n_wildcard = (sems & CHC_WILDCARD) != 0 ? B_TRUE : B_FALSE;
-	np->n_colon = (sems & CHC_COLON) != 0 ? B_TRUE : B_FALSE;
-	np->n_parenleft = (sems & CHC_PARENLEFT) != 0 ? B_TRUE : B_FALSE;
+	n->n_dollar = (sems & CHC_DOLLAR) != 0 ? B_TRUE : B_FALSE;
+	n->n_meta = (sems & CHC_META) != 0 ? B_TRUE : B_FALSE;
+	n->n_percent = (sems & CHC_PERCENT) != 0 ? B_TRUE : B_FALSE;
+	n->n_wildcard = (sems & CHC_WILDCARD) != 0 ? B_TRUE : B_FALSE;
+	n->n_colon = (sems & CHC_COLON) != 0 ? B_TRUE : B_FALSE;
+	n->n_parenleft = (sems & CHC_PARENLEFT) != 0 ? B_TRUE : B_FALSE;
 }
 
 /*
@@ -136,10 +114,10 @@ classify_nameblock(name_t *n)
  *		hashtab		The hashtable used for the nametable
  */
 name_t *
-getname_fn(wchar_t *name, int _len, boolean_t dont_enter, boolean_t *foundp)
+getname_fn(const wchar_t *name, size_t _len, boolean_t dont_enter,
+    boolean_t *foundp)
 {
 	int length;
-	wchar_t	*cap = name;
 	name_t *np = NULL;
 	boolean_t found = B_FALSE;
 
@@ -159,7 +137,7 @@ getname_fn(wchar_t *name, int _len, boolean_t dont_enter, boolean_t *foundp)
 		 * We do not wish to create the entry if it does not
 		 * exist, so just look for it.
 		 */
-		np = nms_lookup(hashtab, name);
+		np = nms_lookup(&hashtab, name);
 
 		if (foundp != NULL)
 			*foundp = (np != NULL) ? B_TRUE : B_FALSE;
@@ -170,7 +148,9 @@ getname_fn(wchar_t *name, int _len, boolean_t dont_enter, boolean_t *foundp)
 	/*
 	 * Locate an existing or create a new entry in the hash table:
 	 */
-	np = nms_insert(hashtab, name, &found);
+	np = nms_insert(&hashtab, name, &found);
+	if (foundp != NULL)
+		*foundp = found;
 	if (found == B_TRUE)
 		return (np);
 
@@ -186,13 +166,7 @@ getname_fn(wchar_t *name, int _len, boolean_t dont_enter, boolean_t *foundp)
 void
 store_name(name_t *n)
 {
-	nms_insert_name(hashtab, n);
-}
-
-void
-free_name(name_t *n)
-{
-	name_free(n);
+	nms_insert_name(&hashtab, n);
 }
 
 /*
@@ -213,32 +187,16 @@ free_name(name_t *n)
 void
 enable_interrupt(register void (*handler) (int))
 {
-#ifdef SUN5_0
 	if (sigivalue != SIG_IGN) {
-#else
-	if (sigivalue != (void (*) (int)) SIG_IGN) {
-#endif
 		(void) bsd_signal(SIGINT, (SIG_PF) handler);
 	}
-#ifdef SUN5_0
 	if (sigqvalue != SIG_IGN) {
-#else
-	if (sigqvalue != (void (*) (int)) SIG_IGN) {
-#endif
 		(void) bsd_signal(SIGQUIT, (SIG_PF) handler);
 	}
-#ifdef SUN5_0
 	if (sigtvalue != SIG_IGN) {
-#else
-	if (sigtvalue != (void (*) (int)) SIG_IGN) {
-#endif
 		(void) bsd_signal(SIGTERM, (SIG_PF) handler);
 	}
-#ifdef SUN5_0
 	if (sighvalue != SIG_IGN) {
-#else
-	if (sighvalue != (void (*) (int)) SIG_IGN) {
-#endif
 		(void) bsd_signal(SIGHUP, (SIG_PF) handler);
 	}
 }
@@ -265,7 +223,7 @@ setup_char_semantics(void)
 	} else {
 		s = "=@-?!+";
 	}
-	for (s; MBTOWC(wc_buffer, s); s++) {
+	for (; MBTOWC(wc_buffer, s); s++) {
 		entry = get_char_semantics_entry(*wc_buffer);
 		char_semantics[entry] |= CHC_COMMAND_PREFIX;
 	}
@@ -372,9 +330,7 @@ fatal_mksh(char * message, ...)
 	if (buf != static_buf) {
 		free(buf);
 	}
-#ifdef SUN5_0
 	exit_status = 1;
-#endif
 	exit(1);
 }
 
@@ -390,7 +346,9 @@ void
 fatal_reader_mksh(char * pattern, ...)
 {
 	va_list args;
+	/*
 	char	message[1000];
+	*/
 
 	va_start(args, pattern);
 /*
@@ -436,9 +394,7 @@ fatal_reader_mksh(char * pattern, ...)
 			       get_current_path_mksh());
 	}
 	(void) fflush(stderr);
-#ifdef SUN5_0
 	exit_status = 1;
-#endif
 	exit(1);
 }
 
@@ -514,7 +470,7 @@ get_current_path_mksh(void)
  *
  *	Global variables used:
  */
-Property
+property_t *
 append_prop(name_t *target, property_id_t type)
 {
 	property_t *prop;
@@ -523,8 +479,8 @@ append_prop(name_t *target, property_id_t type)
 	prop->p_body = zxmalloc(property_body_size(type));
 	prop->p_type = type;
 
-	if (target->p_prop == NULL) {
-		target->p_prop = prop;
+	if (target->n_prop == NULL) {
+		target->n_prop = prop;
 	} else {
 		property_t *last;
 		while (last->p_next != NULL)
@@ -593,7 +549,7 @@ get_prop(property_t *start, property_id_t type)
  *	This is where C-C traps are caught.
  */
 void
-handle_interrupt_mksh(int)
+handle_interrupt_mksh(int _x __UNUSED)
 {
 	(void) fflush(stdout);
 	/* Make sure the processes running under us terminate first. */
@@ -601,14 +557,8 @@ handle_interrupt_mksh(int)
 		kill(childPid, SIGTERM);
 		childPid = -1;
 	}
-#if defined(SUN5_0) || defined(HP_UX) || defined(linux)
 	while (wait((int *) NULL) != -1);
-#if defined(SUN5_0)
 	exit_status = 2;
-#endif
-#else
-	while (wait((union wait *) NULL) != -1);
-#endif
 	exit(2);
 }
 
@@ -628,17 +578,10 @@ handle_interrupt_mksh(int)
 void
 setup_interrupt(register void (*handler) (int))
 {
-#ifdef SUN5_0
 	sigivalue = bsd_signal(SIGINT, SIG_IGN);
 	sigqvalue = bsd_signal(SIGQUIT, SIG_IGN);
 	sigtvalue = bsd_signal(SIGTERM, SIG_IGN);
 	sighvalue = bsd_signal(SIGHUP, SIG_IGN);
-#else
-	sigivalue = (void (*) (int)) bsd_signal(SIGINT, SIG_IGN);
-	sigqvalue = (void (*) (int)) bsd_signal(SIGQUIT, SIG_IGN);
-	sigtvalue = (void (*) (int)) bsd_signal(SIGTERM, SIG_IGN);
-	sighvalue = (void (*) (int)) bsd_signal(SIGHUP, SIG_IGN);
-#endif
 	enable_interrupt(handler);
 }
 
@@ -646,8 +589,9 @@ setup_interrupt(register void (*handler) (int))
 void
 mbstowcs_with_check(wchar_t *pwcs, const char *s, size_t n)
 {
-	if(mbstowcs(pwcs, s, n) == -1) {
-		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 143, "The string `%s' is not valid in current locale"), s);
+	if (mbstowcs(pwcs, s, n) == (size_t)-1) {
+		fatal_mksh(catgets(libmksdmsi18n_catd, 1, 143,
+		    "The string `%s' is not valid in current locale"), s);
 	}
 }
 

@@ -24,14 +24,9 @@
  * Copyright 1994 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)read.h 1.2 06/12/12
- */
-
-#pragma	ident	"@(#)read.h	1.2	06/12/12"
 
 #include <mksh/defs.h>
 
-extern Source	get_next_block_fn(register Source source);
+source_t *get_next_block_fn(source_t *source);
 
-#endif
+#endif	/* _MKSH_READ_H */

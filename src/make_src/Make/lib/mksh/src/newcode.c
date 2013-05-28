@@ -126,8 +126,10 @@ name_alloc(const wchar_t *key)
 }
 
 void
-name_free(name_t *n)
+free_name(name_t *n)
 {
+	if (n == NULL)
+		return;
 	property_t *prop, *propn = NULL;
 	free(n->n_key);
 	for (prop = n->n_prop; prop != NULL; prop = propn) {
@@ -411,6 +413,44 @@ extract_cstring(wchar_t *start, size_t length)
 	}
 
 	return (out);
+}
+
+source_t *
+source_from_wchar(wchar_t *in)
+{
+	source_t *src = zxmalloc(sizeof (*src));
+	size_t len = wcslen(in);
+
+	src->src_fd = -1;
+
+	append_string_wide(in, &src->src_str, len);
+	src->src_str.str_p = src->src_str.str_buf_start;
+	src->src_str.str_end = src->src_str.str_p + len;
+
+	return (src);
+}
+
+wchar_t
+source_popchar(source_t *src)
+{
+	wchar_t ret = source_peekchar(src);
+
+	if (ret != L'\0')
+		src->src_str.str_p++;
+
+	return (ret);
+}
+
+wchar_t
+source_peekchar(source_t *src)
+{
+	if (src == NULL)
+		return (L'\0');
+
+	if (src->src_str.str_p >= src->src_str.str_end)
+		return (L'\0');
+
+	return (*(src->src_str.str_p));
 }
 
 wstring_t *

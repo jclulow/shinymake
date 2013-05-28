@@ -24,26 +24,12 @@
  * Copyright 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
-/*
- * @(#)mksh.h 1.7 06/12/12
- */
-
-#pragma	ident	"@(#)mksh.h	1.7	06/12/12"
 
 /*
  * Included files
  */
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-#	include <dm/Avo_DmakeCommand.h>
-#endif
 
 #include <mksh/defs.h>
 #include <unistd.h>
 
-#if defined(DISTRIBUTED) || defined(MAKETOOL) /* tolik */
-
-extern int	do_job(Avo_DmakeCommand *cmd_list[], char *env_list[], char *stdout_file, char *stderr_file, char *cwd, char *cnwd, int ignore, int silent, pathpt vroot_path, char *shell, int nice_prio);
-
-#endif /* TEAMWARE_MAKE_CMN */
-
-#endif
+#endif	/* _MKSH_MKSH_H */
